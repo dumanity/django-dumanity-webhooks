@@ -1,0 +1,45 @@
+[build-system]
+requires = ["hatchling>=1.27.0"]
+build-backend = "hatchling.build"
+
+[project]
+name = "django-dumanity-webhooks"
+version = "0.1.0"
+description = "Secure-by-design webhook infrastructure for Django apps"
+readme = "README.md"
+license = { text = "Proprietary" }
+authors = [
+    { name = "Amilcar" }
+]
+requires-python = ">=3.12"
+dependencies = [
+    "Django>=6.0.3",
+    "djangorestframework==3.17.1",
+    "djangorestframework-api-key==3.1.0",
+    "jsonschema==4.26.0",
+    "requests==2.33.1"
+]
+keywords = ["django", "webhooks", "hmac", "outbox", "api", "security"]
+classifiers = [
+    "Development Status :: 4 - Beta",
+    "Framework :: Django",
+    "Framework :: Django :: 6.0",
+    "Intended Audience :: Developers",
+    "License :: Other/Proprietary License",
+    "Programming Language :: Python :: 3",
+    "Programming Language :: Python :: 3.12",
+    "Topic :: Internet :: WWW/HTTP",
+    "Topic :: Software Development :: Libraries"
+]
+
+[project.scripts]
+webhooks-info = "webhooks.cli:main"
+
+[project.urls]
+Homepage = "https://github.com/dumanity/dumanity-django-webhooks"
+
+[tool.hatch.build.targets.wheel]
+packages = ["webhooks"]
+
+[tool.uv]
+package = true

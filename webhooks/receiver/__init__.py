@@ -1,0 +1,1 @@
+"""Receiver module for webhooks."""
