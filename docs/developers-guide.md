@@ -96,6 +96,37 @@ Un plugin debe:
 3. registrar handlers
 4. bootstrapping en `AppConfig.ready()`
 
+### Scaffold automatico de dominio
+
+Para evitar repetir estructura manual al crear dominios nuevos, el paquete incluye:
+
+```bash
+python manage.py start_webhook_domain socios
+```
+
+Eso crea un paquete scaffold con:
+
+- `apps.py`
+- `events.py`
+- `handlers.py`
+- `registry.py`
+- `signals.py`
+- `README.md`
+
+Opciones utiles:
+
+```bash
+python manage.py start_webhook_domain comercios --output-dir ./domains
+python manage.py start_webhook_domain beneficios --package-name beneficios_events
+python manage.py start_webhook_domain socios --dry-run
+```
+
+Resolucion de colisiones de nombres:
+
+- Nombre por defecto: `<domain>_events`.
+- Si ese nombre ya existe en el proyecto, en apps instaladas o como modulo importable, el comando usa sufijos incrementales (`_2`, `_3`, ...).
+- Esto evita conflictos cuando ya existe una app Django con el mismo nombre del dominio (ej: `socios`).
+
 ## 6. Testing recomendado
 
 ### Unit tests

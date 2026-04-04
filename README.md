@@ -145,6 +145,96 @@ webhooks-info test-endpoint \
 
 ## Para desarrolladores
 
+Scaffold rapido de dominio webhook:
+
+```bash
+python manage.py start_webhook_domain socios
+```
+
+Si hay colision de nombre (por ejemplo ya existe una app `socios`), el comando resuelve automaticamente usando sufijos (`socios_events_2`, etc.).
+
+## Starter Kit Para Agentes IA (Copy/Paste)
+
+Si quieres que agentes trabajen casi solos cuando este paquete sea dependencia, copia estos bloques en tu proyecto consumidor.
+
+### 1) `AGENTS.md` minimo en la raiz
+
+```md
+# AGENTS
+
+## Contexto del proyecto
+- Arquitectura: Django monolito modular por dominios.
+- Integracion entre apps: REST para comandos, webhooks para eventos de estado.
+- Source-of-truth: una sola app por entidad.
+
+## Reglas operativas
+- No cambiar contratos de eventos sin versionado (`*.v1` -> `*.v2`).
+- No mover secretos a logs ni respuestas de error.
+- Si tocas receiver/producer, ejecutar pruebas y check de migraciones.
+
+## Ubicacion de piezas clave
+- Eventos por dominio: `<dominio>_events/events.py`
+- Handlers por dominio: `<dominio>_events/handlers.py`
+- Registry de schemas: `<dominio>_events/registry.py`
+
+## Flujo esperado para cambios
+1. Crear/actualizar evento en `events.py`.
+2. Registrar schema en `registry.py`.
+3. Implementar handler en `handlers.py`.
+4. Agregar/actualizar tests del dominio.
+5. Ejecutar `check-agent-ready` antes de PR.
+```
+
+### 2) Comando unico de validacion para agente
+
+```bash
+# Puedes usarlo directo o convertirlo en task de CI
+DJANGO_SETTINGS_MODULE=tests_settings PYTHONPATH=. \
+python -m django makemigrations --check --dry-run && \
+python -m pytest tests.py
+```
+
+### 3) Guardrail de CI minimo (`.github/workflows/agent-guardrails.yml`)
+
+```yaml
+name: Agent Guardrails
+
+on:
+  pull_request:
+  push:
+    branches: [main]
+
+jobs:
+  verify:
+    runs-on: ubuntu-latest
+    steps:
+      - uses: actions/checkout@v4
+      - uses: actions/setup-python@v5
+        with:
+          python-version: "3.12"
+      - name: Install
+        run: |
+          python -m pip install -U pip
+          pip install -e .
+      - name: Migrations drift check
+        run: |
+          DJANGO_SETTINGS_MODULE=tests_settings PYTHONPATH=. \
+          python -m django makemigrations --check --dry-run
+      - name: Tests
+        run: |
+          python -m pytest tests.py
+```
+
+### 4) Scaffold rapido por dominio
+
+```bash
+python manage.py start_webhook_domain socios
+python manage.py start_webhook_domain comercios --output-dir ./domains
+python manage.py start_webhook_domain socios --dry-run
+```
+
+Con esto, incluso si ya existe una app `socios`, el scaffold evita colision con sufijos (`socios_events_2`, `socios_events_3`, ...).
+
 Referencia tecnica ampliada en:
 
 - `webhooks/README.md`

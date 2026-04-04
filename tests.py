@@ -7,9 +7,12 @@ Valida seguridad multi-app (fail-closed, idempotencia scoped, rate limit determi
 import uuid
 import json
 import time
+import tempfile
+from pathlib import Path
 from unittest.mock import Mock, patch
 
 from django.contrib import admin, messages
+from django.core.management import call_command
 from django.db import transaction
 from django.test import TestCase, RequestFactory, TransactionTestCase
 from django.urls import reverse
@@ -752,6 +755,34 @@ class E2EExampleAppsTest(TestCase):
         self.assertEqual(first.data["status"], "ok")
         self.assertEqual(second.status_code, 200)
         self.assertEqual(second.data["status"], "duplicate")
+
+
+class DomainScaffoldCommandTest(TestCase):
+    """Valida scaffold de dominios y resolución de colisiones de nombre."""
+
+    def test_start_webhook_domain_creates_expected_files(self):
+        with tempfile.TemporaryDirectory() as tmp_dir:
+            call_command("start_webhook_domain", "socios", output_dir=tmp_dir)
+
+            package_dir = Path(tmp_dir) / "socios_events"
+            self.assertTrue(package_dir.exists())
+            self.assertTrue((package_dir / "__init__.py").exists())
+            self.assertTrue((package_dir / "apps.py").exists())
+            self.assertTrue((package_dir / "events.py").exists())
+            self.assertTrue((package_dir / "handlers.py").exists())
+            self.assertTrue((package_dir / "registry.py").exists())
+            self.assertTrue((package_dir / "signals.py").exists())
+            self.assertTrue((package_dir / "README.md").exists())
+
+    def test_start_webhook_domain_resolves_name_collision(self):
+        with tempfile.TemporaryDirectory() as tmp_dir:
+            existing = Path(tmp_dir) / "socios_events"
+            existing.mkdir(parents=True, exist_ok=True)
+
+            call_command("start_webhook_domain", "socios", output_dir=tmp_dir)
+
+            self.assertTrue((Path(tmp_dir) / "socios_events").exists())
+            self.assertTrue((Path(tmp_dir) / "socios_events_2").exists())
 
 
 if __name__ == "__main__":
