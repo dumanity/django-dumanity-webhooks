@@ -8,6 +8,27 @@ Guia para mantenedores y contribuidores de `django-dumanity-webhooks`.
 - Simplicidad operativa: cambios incrementales, sin sobreingenieria.
 - Desacople de dominio: eventos y handlers viven en plugins.
 
+### Regla de oro operativa
+
+- Nunca permitas que dos apps sean source-of-truth de la misma entidad.
+- Webhook = "informo estado".
+- REST = "solicito acción".
+
+### Estrategia de auditoria por dominio (lean)
+
+Para mantener capacidad de diagnostico sin sobredisenar la operacion:
+
+1. Audita decisiones, no todo el payload.
+2. Correlaciona por `correlation_id` en comando, evento y estado final.
+3. Usa `request_id` para idempotencia de comandos.
+4. Usa `event_id` para replay/reconciliacion de webhooks.
+
+Guia completa con ejemplos:
+
+- `docs/auditing-guide.md`
+- `docs/examples/audit-record-template.json`
+- `docs/incident-playbook.md`
+
 ## 2. Componentes internos
 
 ### `core`
@@ -210,6 +231,10 @@ Buenas prácticas para el plan gratuito:
 3. Revisar API keys activas y headers reales en `AuditLog`.
 4. Reprocesar eventos puntuales desde DLQ tras corregir causa.
 5. Si hay tormenta de retries, bajar temporalmente `max_retries` por endpoint.
+
+Referencia extendida para auditoria operativa:
+
+- `docs/auditing-guide.md` (modelo de auditoria, catalogo de codigos, runbook 10 min, postmortem corto)
 
 ### Reproceso controlado (manual)
 

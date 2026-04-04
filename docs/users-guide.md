@@ -177,6 +177,31 @@ Notas de métricas (modo lean):
 - `failed` en outbox: endpoint caido o respuestas no-2xx.
 - Timeouts frecuentes: subir `request_timeout_seconds` o reducir carga en el receiver.
 
+## 9.1 Regla de oro operativa
+
+- Nunca permitas que dos apps sean source-of-truth de la misma entidad.
+- Webhook = "informo estado".
+- REST = "solicito acción".
+
+## 9.2 Auditoria liviana del intercambio (recomendado)
+
+Para operar con bajo costo y baja carga mental, usa la guia dedicada:
+
+- `docs/auditing-guide.md`
+
+Que incluye:
+
+- modelo minimo de datos de auditoria (`correlation_id`, `request_id`, `event_id`)
+- ejemplos concretos de provision de perfil y uso de beneficio
+- runbook de incidente en 10 minutos
+- politica de alertas anti-fatiga y retencion economica
+- checklists diario/semanal/mensual
+
+Recursos listos para usar:
+
+- `docs/examples/audit-record-template.json`
+- `docs/incident-playbook.md`
+
 ## 10. Producción (modo lean + Sentry Free)
 
 Stack mínimo recomendado:

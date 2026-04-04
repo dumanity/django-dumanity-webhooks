@@ -1,0 +1,37 @@
+{
+  "timestamp_utc": "2026-04-04T19:22:00Z",
+  "correlation_id": "cor_01JY2X2J1A5M8R4Q6N9V3T7K0D",
+  "request_id": "req_01JY2X2J8B4C1F7N6Q9T5V3M0R",
+  "event_id": "evt_01JY2X2JD9W3A6R4N8K1T5M0Q7",
+  "operation": "benefit_redeem_attempt",
+  "actor_system": "saas",
+  "tenant_id": "t_abc",
+  "integration_id": "4f84aa2b-e306-4ef5-b8e9-c6f5f52a06db",
+  "subject_type": "socios_profile",
+  "subject_id": "sp_01JY2WZZY2Q8V7N4M6K1T3R5D9",
+  "status": "approved",
+  "code": "OK",
+  "http_status": 200,
+  "latency_ms": 173,
+  "decision_source": "saas_policy_engine",
+  "decision_notes": "eligible_and_quota_available",
+  "raw_ref": {
+    "audit_log_id": 1245,
+    "event_log_id": 98,
+    "outgoing_event_id": 441,
+    "dead_letter_id": null
+  },
+  "business_state": {
+    "redemption_id": "red_01JY2X34P4F8K6M9Q2T1V7R5N0",
+    "final_state": "consumed"
+  },
+  "ui_feedback": {
+    "message": "Beneficio aplicado correctamente",
+    "locale": "es-CL"
+  },
+  "meta": {
+    "schema_version": "1.0",
+    "created_by": "system",
+    "contains_pii": false
+  }
+}

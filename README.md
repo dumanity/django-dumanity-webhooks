@@ -149,4 +149,7 @@ Referencia tecnica ampliada en:
 
 - `webhooks/README.md`
 - `docs/developers-guide.md`
+- `docs/auditing-guide.md`
+- `docs/incident-playbook.md`
+- `docs/examples/audit-record-template.json`
 - `docs/release.md`
