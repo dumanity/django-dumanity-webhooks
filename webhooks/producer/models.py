@@ -49,6 +49,8 @@ class OutgoingEvent(models.Model):
         id: UUID único del evento
         endpoint: FK a WebhookEndpoint destino
         payload: JSON completo con estructura {"id", "type", "data"}
+        correlation_id: Id transversal de la transaccion (opcional)
+        request_id: Id del intento del comando (opcional)
         attempts: Contador de intentos de envío fallidos
         status: "pending", "delivered", "failed"
         next_retry_at: Timestamp del siguiente reintento programado
@@ -77,6 +79,8 @@ class OutgoingEvent(models.Model):
     id = models.UUIDField(primary_key=True, default=uuid.uuid4)
     endpoint = models.ForeignKey(WebhookEndpoint, on_delete=models.CASCADE)
     payload = models.JSONField(help_text="Evento completo")
+    correlation_id = models.CharField(max_length=100, null=True, blank=True)
+    request_id = models.CharField(max_length=100, null=True, blank=True)
     attempts = models.IntegerField(default=0)
     status = models.CharField(max_length=20, default="pending")
     next_retry_at = models.DateTimeField(null=True, blank=True)

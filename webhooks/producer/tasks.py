@@ -70,7 +70,12 @@ def process_outgoing():
 
     for e in events:
         try:
-            res = send(e.endpoint, e.payload)
+            res = send(
+                e.endpoint,
+                e.payload,
+                correlation_id=e.correlation_id,
+                request_id=e.request_id,
+            )
 
             if res.status_code < 300:
                 e.status = "delivered"

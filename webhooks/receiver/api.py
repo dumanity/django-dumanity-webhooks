@@ -96,8 +96,8 @@ class WebhookView(APIView):
 class MetricsView(APIView):
     """Endpoint de métricas en formato texto Prometheus."""
 
-    authentication_classes = []
-    permission_classes = []
+    authentication_classes: list = []
+    permission_classes: list = []
 
     def get(self, request):
         return HttpResponse(

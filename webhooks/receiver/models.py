@@ -73,6 +73,8 @@ class EventLog(models.Model):
     Fields:
         integration: FK a Integration, scope del evento
         event_id: UUID del evento (reutilizable entre integraciones)
+        correlation_id: Id transversal de la transaccion (opcional)
+        request_id: Id del intento de comando relacionado (opcional)
         type: Tipo de evento (ej: "user.created.v1")
         payload: JSON completo del evento
         status: "received", "processed", "failed"
@@ -91,6 +93,8 @@ class EventLog(models.Model):
     """
     integration = models.ForeignKey(Integration, on_delete=models.CASCADE)
     event_id = models.UUIDField()
+    correlation_id = models.CharField(max_length=100, null=True, blank=True)
+    request_id = models.CharField(max_length=100, null=True, blank=True)
     type = models.CharField(max_length=100)
     payload = models.JSONField()
     status = models.CharField(max_length=20)
@@ -109,6 +113,8 @@ class DeadLetter(models.Model):
         payload: JSON del evento que falló
         reason: Mensaje de error
         retries: Contador de intentos fallidos
+        correlation_id: Id transversal de la transaccion (opcional)
+        request_id: Id del intento relacionado (opcional)
     
     Operación:
         - Revisar regularmente para debug
@@ -118,6 +124,8 @@ class DeadLetter(models.Model):
     payload = models.JSONField()
     reason = models.TextField()
     retries = models.IntegerField(default=0)
+    correlation_id = models.CharField(max_length=100, null=True, blank=True)
+    request_id = models.CharField(max_length=100, null=True, blank=True)
 
 
 class AuditLog(models.Model):
@@ -130,6 +138,8 @@ class AuditLog(models.Model):
     Fields:
         event_id: UUID del evento
         integration: Nombre de la integración (desnormalizado para rapidez)
+        correlation_id: Id transversal de la transaccion (opcional)
+        request_id: Id del intento relacionado (opcional)
         request_headers: JSON con headers enviados (sin Authorization)
         created_at: Timestamp de recepción
     
@@ -140,5 +150,7 @@ class AuditLog(models.Model):
     """
     event_id = models.UUIDField()
     integration = models.CharField(max_length=100)
+    correlation_id = models.CharField(max_length=100, null=True, blank=True)
+    request_id = models.CharField(max_length=100, null=True, blank=True)
     request_headers = models.JSONField()
     created_at = models.DateTimeField(auto_now_add=True)

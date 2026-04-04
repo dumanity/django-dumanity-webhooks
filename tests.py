@@ -13,7 +13,6 @@ from django.contrib import admin, messages
 from django.db import transaction
 from django.test import TestCase, RequestFactory, TransactionTestCase
 from django.urls import reverse
-from django.utils.timezone import now
 from django.core.cache import cache
 
 from rest_framework_api_key.models import APIKey
@@ -23,7 +22,7 @@ from webhooks.core.signing import sign
 from webhooks.core.metrics import metrics, export_prometheus_text, inc
 from webhooks.core.registry import register_event, _registry
 from webhooks.core.handlers import register_handler, _HANDLER_REGISTRY
-from webhooks.receiver.models import Integration, Secret, EventLog, DeadLetter
+from webhooks.receiver.models import Integration, Secret, EventLog
 from webhooks.receiver.api import _resolve_integration, MetricsView, WebhookView
 from webhooks.receiver.services import WebhookService
 from webhooks.receiver.rate_limit import is_rate_limited
@@ -223,6 +222,26 @@ class ProducerOutboxTest(TestCase):
         self.assertEqual(result.endpoint_id, self.endpoint.id)
         self.assertEqual(result.attempts, 0)
         self.assertIsNotNone(result.next_retry_at)
+
+    def test_publish_event_persists_trace_context(self):
+        """publish_event normaliza y persiste correlation_id/request_id."""
+        payload = {
+            "id": str(uuid.uuid4()),
+            "type": "user.created.v1",
+            "data": {"user_id": "123"},
+        }
+
+        result = publish_event(
+            self.endpoint,
+            payload,
+            correlation_id="cor-123",
+            request_id="req-456",
+        )
+
+        self.assertEqual(result.correlation_id, "cor-123")
+        self.assertEqual(result.request_id, "req-456")
+        self.assertEqual(result.payload["meta"]["correlation_id"], "cor-123")
+        self.assertEqual(result.payload["meta"]["request_id"], "req-456")
     
     def test_multiple_endpoints_independent(self):
         """Múltiples endpoints son independientes."""
@@ -260,6 +279,27 @@ class ProducerOutboxTest(TestCase):
 
         mock_post.assert_called_once()
         self.assertEqual(mock_post.call_args.kwargs["timeout"], 3)
+
+    @patch("webhooks.producer.sender.requests.post")
+    def test_sender_includes_trace_headers(self, mock_post):
+        """send agrega X-Correlation-ID y X-Request-ID cuando existen."""
+        payload = {
+            "id": str(uuid.uuid4()),
+            "type": "user.created.v1",
+            "data": {"user_id": "123"},
+        }
+        mock_post.return_value = Mock(status_code=200)
+
+        send(
+            self.endpoint,
+            payload,
+            correlation_id="cor-123",
+            request_id="req-456",
+        )
+
+        headers = mock_post.call_args.kwargs["headers"]
+        self.assertEqual(headers["X-Correlation-ID"], "cor-123")
+        self.assertEqual(headers["X-Request-ID"], "req-456")
 
     @patch("webhooks.producer.tasks.send")
     def test_process_outgoing_respects_endpoint_max_retries(self, mock_send):
@@ -628,16 +668,23 @@ class E2EExampleAppsTest(TestCase):
         def _user_verified(data):
             self.handled.append(("user.verified.v1", data["user_id"]))
 
-    def _deliver(self, payload, secret, raw_key):
+    def _deliver(self, payload, secret, raw_key, correlation_id=None, request_id=None):
         body = json.dumps(payload).encode()
         signature = sign(secret=secret, timestamp=int(time.time()), body=body)
+        extra_headers = {
+            "HTTP_WEBHOOK_SIGNATURE": signature,
+            "HTTP_X_EVENT_ID": payload["id"],
+            "HTTP_AUTHORIZATION": f"Api-Key {raw_key}",
+        }
+        if correlation_id:
+            extra_headers["HTTP_X_CORRELATION_ID"] = correlation_id
+        if request_id:
+            extra_headers["HTTP_X_REQUEST_ID"] = request_id
         request = self.factory.post(
             "/webhooks/",
             data=body,
             content_type="application/json",
-            HTTP_WEBHOOK_SIGNATURE=signature,
-            HTTP_X_EVENT_ID=payload["id"],
-            HTTP_AUTHORIZATION=f"Api-Key {raw_key}",
+            **extra_headers,
         )
         return WebhookView.as_view()(request)
 
@@ -659,17 +706,36 @@ class E2EExampleAppsTest(TestCase):
         publish_event(self.endpoint_to_a, payload_b_to_a)
 
         # Entrega A -> B
-        response_ab = self._deliver(payload_a_to_b, secret="secret-ab", raw_key=self.raw_key_b)
+        response_ab = self._deliver(
+            payload_a_to_b,
+            secret="secret-ab",
+            raw_key=self.raw_key_b,
+            correlation_id="cor-a-to-b",
+            request_id="req-a-to-b",
+        )
         self.assertEqual(response_ab.status_code, 200)
         self.assertEqual(response_ab.data["status"], "ok")
 
         # Entrega B -> A
-        response_ba = self._deliver(payload_b_to_a, secret="secret-ba", raw_key=self.raw_key_a)
+        response_ba = self._deliver(
+            payload_b_to_a,
+            secret="secret-ba",
+            raw_key=self.raw_key_a,
+            correlation_id="cor-b-to-a",
+            request_id="req-b-to-a",
+        )
         self.assertEqual(response_ba.status_code, 200)
         self.assertEqual(response_ba.data["status"], "ok")
 
         self.assertIn(("client.created.v1", "c-100"), self.handled)
         self.assertIn(("user.verified.v1", "u-100"), self.handled)
+
+        audit_ab = EventLog.objects.get(integration=self.integration_b, event_id=uuid.UUID(payload_a_to_b["id"]))
+        audit_ba = EventLog.objects.get(integration=self.integration_a, event_id=uuid.UUID(payload_b_to_a["id"]))
+        self.assertEqual(audit_ab.correlation_id, "cor-a-to-b")
+        self.assertEqual(audit_ab.request_id, "req-a-to-b")
+        self.assertEqual(audit_ba.correlation_id, "cor-b-to-a")
+        self.assertEqual(audit_ba.request_id, "req-b-to-a")
 
     def test_replay_returns_duplicate_status(self):
         """Un replay con mismo X-Event-ID retorna duplicate."""

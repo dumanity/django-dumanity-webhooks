@@ -12,6 +12,15 @@ from webhooks.core.handlers import get_handler
 
 from .models import AuditLog, DeadLetter, EventLog, Integration, Secret
 
+
+def _extract_trace_context(headers, payload=None):
+    """Obtiene correlation_id/request_id desde headers o meta del payload."""
+    meta = (payload or {}).get("meta") or {}
+    return {
+        "correlation_id": headers.get("X-Correlation-ID") or meta.get("correlation_id"),
+        "request_id": headers.get("X-Request-ID") or meta.get("request_id"),
+    }
+
 class WebhookService:
     """
     Pipeline de procesamiento de eventos entrantes (receiver).
@@ -64,6 +73,7 @@ class WebhookService:
 
         sig = headers.get("Webhook-Signature")
         event_id_raw = headers.get("X-Event-ID")
+        trace_context = _extract_trace_context(headers)
 
         try:
             event_id = uuid.UUID(event_id_raw)
@@ -85,6 +95,8 @@ class WebhookService:
         AuditLog.objects.create(
             event_id=event_id,
             integration=integration.name if integration else "unknown",
+            correlation_id=trace_context["correlation_id"],
+            request_id=trace_context["request_id"],
             request_headers=dict(headers),
         )
 
@@ -101,6 +113,8 @@ class WebhookService:
             EventLog.objects.create(
                 integration=integration,
                 event_id=event_id,
+                correlation_id=trace_context["correlation_id"],
+                request_id=trace_context["request_id"],
                 type=payload["type"],
                 payload=payload,
                 status="processed",
@@ -117,6 +131,8 @@ class WebhookService:
         log = EventLog.objects.create(
             integration=integration,
             event_id=event_id,
+            correlation_id=trace_context["correlation_id"],
+            request_id=trace_context["request_id"],
             type=payload["type"],
             payload=payload,
             status="received"
@@ -131,7 +147,13 @@ class WebhookService:
         except Exception as e:
             log.status = "failed"
             inc("webhook.failed")
-            DeadLetter.objects.create(payload=payload, reason=str(e), retries=1)
+            DeadLetter.objects.create(
+                payload=payload,
+                reason=str(e),
+                retries=1,
+                correlation_id=trace_context["correlation_id"],
+                request_id=trace_context["request_id"],
+            )
 
         log.save()
         return "ok"

@@ -13,7 +13,26 @@ from django.db import transaction
 
 from .sender import send
 
-def publish_event(endpoint, payload, on_commit_callback=None):
+
+def _normalize_trace_context(payload, correlation_id=None, request_id=None):
+    """Devuelve una copia del payload con meta de trazabilidad normalizada."""
+    event_payload = dict(payload)
+    meta = dict(event_payload.get("meta") or {})
+
+    resolved_correlation_id = correlation_id or meta.get("correlation_id")
+    resolved_request_id = request_id or meta.get("request_id")
+
+    if resolved_correlation_id is not None or resolved_request_id is not None:
+        if resolved_correlation_id is not None:
+            meta["correlation_id"] = resolved_correlation_id
+        if resolved_request_id is not None:
+            meta["request_id"] = resolved_request_id
+        event_payload["meta"] = meta
+
+    return event_payload, resolved_correlation_id, resolved_request_id
+
+
+def publish_event(endpoint, payload, on_commit_callback=None, correlation_id=None, request_id=None):
     """
     Publica un evento en el outbox para entrega asíncrona.
     
@@ -50,9 +69,17 @@ def publish_event(endpoint, payload, on_commit_callback=None):
         ... })
     """
     from .models import OutgoingEvent
+    event_payload, resolved_correlation_id, resolved_request_id = _normalize_trace_context(
+        payload,
+        correlation_id=correlation_id,
+        request_id=request_id,
+    )
+
     event = OutgoingEvent.objects.create(
         endpoint=endpoint, 
-        payload=payload, 
+        payload=event_payload,
+        correlation_id=resolved_correlation_id,
+        request_id=resolved_request_id,
         next_retry_at=now()
     )
 
