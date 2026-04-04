@@ -198,7 +198,7 @@ Cuando un proyecto consumidor instala este paquete desde GitHub privado en Docke
 1. Habilitar BuildKit.
 2. Resolver dependencia en build-time con `uv sync`.
 3. Usar SSH deploy key read-only o secret de build.
-4. Fijar dependencia por tag (`@v0.1.0`) o commit SHA.
+4. Fijar dependencia por tag (`@v0.2.0`) o commit SHA.
 
 Anti-patrones a evitar:
 
