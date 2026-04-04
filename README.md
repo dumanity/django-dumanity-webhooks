@@ -28,13 +28,13 @@ Resolver de forma reusable el envio y recepcion de webhooks entre aplicaciones s
 Desde proyectos con `uv`, recomendado fijar por tag de Git:
 
 ```bash
-uv add "django-dumanity-webhooks @ git+https://github.com/dumanity/django-dumanity-webhooks.git@v0.2.0"
+uv add "django-dumanity-webhooks @ git+https://github.com/dumanity/django-dumanity-webhooks.git@v0.3.0"
 ```
 
 Instalación equivalente con `pip`:
 
 ```bash
-pip install "django-dumanity-webhooks @ git+https://github.com/dumanity/django-dumanity-webhooks.git@v0.2.0"
+pip install "django-dumanity-webhooks @ git+https://github.com/dumanity/django-dumanity-webhooks.git@v0.3.0"
 ```
 
 También puedes declararlo manualmente en `pyproject.toml` del consumidor:
@@ -42,7 +42,7 @@ También puedes declararlo manualmente en `pyproject.toml` del consumidor:
 ```toml
 [project]
 dependencies = [
-  "django-dumanity-webhooks @ git+https://github.com/dumanity/django-dumanity-webhooks.git@v0.2.0",
+  "django-dumanity-webhooks @ git+https://github.com/dumanity/django-dumanity-webhooks.git@v0.3.0",
 ]
 ```
 
@@ -50,12 +50,12 @@ Notas sobre repositorio privado:
 
 - En local, usa `gh auth login`, token o SSH key con acceso al repo.
 - En CI, configura credenciales de GitHub (PAT/deploy key) para poder resolver la dependencia.
-- Mantén siempre la dependencia fijada por tag (`@v0.2.0`) para builds reproducibles.
+- Mantén siempre la dependencia fijada por tag (`@v0.3.0`) para builds reproducibles.
 
 Si el paquete vive en un subdirectorio de un monorepo, usa `#subdirectory=`:
 
 ```bash
-uv add "django-dumanity-webhooks @ git+https://github.com/dumanity/django-dumanity-webhooks.git@v0.2.0#subdirectory=django-dumanity-webhooks"
+uv add "django-dumanity-webhooks @ git+https://github.com/dumanity/django-dumanity-webhooks.git@v0.3.0#subdirectory=django-dumanity-webhooks"
 ```
 
 ## Configuracion minima
@@ -67,6 +67,8 @@ INSTALLED_APPS += [
     "webhooks.receiver",
 ]
 ```
+
+Internamente, las apps usan labels unicos para evitar colisiones con paquetes comunes como `core` en proyectos consumidores.
 
 ```bash
 python manage.py makemigrations

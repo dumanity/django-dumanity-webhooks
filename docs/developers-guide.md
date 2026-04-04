@@ -2,6 +2,17 @@
 
 Guia para mantenedores y contribuidores de `django-dumanity-webhooks`.
 
+## Lectura rapida si estas cansado
+
+Si solo necesitas el mapa mental:
+
+1. La app de negocio define que pasó.
+2. El plugin de dominio define el contrato.
+3. El producer publica usando ese contrato.
+4. El receiver valida firma, schema e idempotencia antes de ejecutar el handler.
+
+Regla corta: la lógica de negocio vive en la app, el contrato vive en el plugin y la validación vive en el receiver.
+
 ## 1. Filosofia
 
 - Seguridad por diseño como default.
@@ -38,6 +49,16 @@ Guia completa con ejemplos:
 - `signing.py`: HMAC SHA256 con timestamp. Firma determinística con anti-replay.
 - `verification.py`: parse header, tolerancia temporal, multi-secret. Validación con múltiples secretos activos.
 - `metrics.py`: contadores in-memory. Métricas locales por evento.
+
+Los eventos no viven en `core`. `core` solo los registra y los consume.
+
+Labels internos de Django:
+
+- `dumanity_webhooks_core`
+- `dumanity_webhooks_producer`
+- `dumanity_webhooks_receiver`
+
+Eso evita colisiones cuando el paquete se instala en proyectos que ya tienen una app llamada `core` o nombres similares.
 
 ### `producer`
 
@@ -96,6 +117,8 @@ Un plugin debe:
 3. registrar handlers
 4. bootstrapping en `AppConfig.ready()`
 
+En repos separados, el plugin suele ser un paquete propio fijado por tag. Eso evita que un proyecto vea contratos distintos a otro sin querer.
+
 ### Scaffold automatico de dominio
 
 Para evitar repetir estructura manual al crear dominios nuevos, el paquete incluye:
@@ -126,6 +149,18 @@ Resolucion de colisiones de nombres:
 - Nombre por defecto: `<domain>_events`.
 - Si ese nombre ya existe en el proyecto, en apps instaladas o como modulo importable, el comando usa sufijos incrementales (`_2`, `_3`, ...).
 - Esto evita conflictos cuando ya existe una app Django con el mismo nombre del dominio (ej: `socios`).
+
+### Flujo recomendado con varios repos
+
+Si trabajas con un repo de negocio, un repo de plugin de contratos y un repo de receiver, usa este orden:
+
+1. Cambia o agrega el evento en el plugin.
+2. Sube un tag del plugin.
+3. Actualiza producer y receiver para consumir ese tag.
+4. Ajusta handlers y emisores locales.
+5. Ejecuta pruebas de contrato antes de mergear.
+
+Si cambia el payload, no sobreescribas el mismo evento: crea `v2` y conserva `v1` mientras algún consumidor lo necesite.
 
 ## 6. Testing recomendado
 
@@ -198,7 +233,7 @@ Cuando un proyecto consumidor instala este paquete desde GitHub privado en Docke
 1. Habilitar BuildKit.
 2. Resolver dependencia en build-time con `uv sync`.
 3. Usar SSH deploy key read-only o secret de build.
-4. Fijar dependencia por tag (`@v0.2.0`) o commit SHA.
+4. Fijar dependencia por tag (`@v0.3.0`) o commit SHA.
 
 Anti-patrones a evitar:
 

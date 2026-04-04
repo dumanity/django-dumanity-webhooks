@@ -6,6 +6,8 @@ class WebhooksCoreConfig(AppConfig):
     Auto-descubre handlers en todas las apps instaladas.
     """
     name = "webhooks.core"
+    label = "dumanity_webhooks_core"
+    verbose_name = "Dumanity Webhooks Core"
 
     def ready(self):
         autodiscover_modules("handlers")

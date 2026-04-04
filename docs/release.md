@@ -2,7 +2,7 @@
 
 Guia operativa para distribuir `django-dumanity-webhooks` de forma privada primero.
 
-## Changelog v0.2.0 (Initial Stable Lean Release)
+## Changelog v0.3.0 (Initial Stable Lean Release)
 
 ### New Features
 - Soporte real para múltiples apps (A, B, C) como producers+receivers sin colisión de event_id.
@@ -53,7 +53,7 @@ cp -R dist/ /ruta/interna/artefactos/
 Agregar dependencia privada por tag:
 
 ```bash
-uv add "django-dumanity-webhooks @ git+https://github.com/dumanity/django-dumanity-webhooks.git@v0.2.0"
+uv add "django-dumanity-webhooks @ git+https://github.com/dumanity/django-dumanity-webhooks.git@v0.3.0"
 ```
 
 o declararla en `pyproject.toml` del consumidor:
@@ -61,7 +61,7 @@ o declararla en `pyproject.toml` del consumidor:
 ```toml
 [project]
 dependencies = [
-	"django-dumanity-webhooks @ git+https://github.com/dumanity/django-dumanity-webhooks.git@v0.2.0",
+	"django-dumanity-webhooks @ git+https://github.com/dumanity/django-dumanity-webhooks.git@v0.3.0",
 ]
 ```
 
@@ -84,7 +84,7 @@ SemVer:
 
 Ejemplo:
 - 0.1.x → 0.1.1 (hotfix)
-- 0.1.x → 0.2.0 (nuevas features compatibles)
+- 0.1.x → 0.3.0 (nuevas features compatibles)
 - 0.x → 1.0.0 (API/operación estable de largo plazo)
 
 ## 6. Post-release
