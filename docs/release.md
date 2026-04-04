@@ -2,17 +2,15 @@
 
 Guia operativa para distribuir `django-dumanity-webhooks` de forma privada primero.
 
-## Changelog v3.1 (Multi-App Security)
-
-### Breaking Changes
-- **Resolución fail-closed**: `_resolve_integration()` ahora retorna `None` si no hay API key válida (antes fallaba a `Integration.objects.first()`). El endpoint retorna 403 si es None.
-- **Idempotencia scoped**: `EventLog.event_id` ya no es `unique=True` global. Ahora es `unique_together=('integration', 'event_id')`. Requiere migración de datos.
-- **Rate limit por integration_id**: `is_rate_limited()` ahora recibe UUID de integración, no nombre (string).
+## Changelog v0.1.0 (Initial Stable Lean Release)
 
 ### New Features
 - Soporte real para múltiples apps (A, B, C) como producers+receivers sin colisión de event_id.
 - Idempotencia garantizada por integración (permite reutilizar UUIDs entre productores).
 - Rate limit determinístico y aislado por integración.
+- Outbox transaccional y políticas por endpoint (`max_retries`, `request_timeout_seconds`).
+- Endpoint `/metrics`, script de carga y runbook operativo lean.
+- Prueba de conexión de endpoint (`probe_connection`, CLI y UI mínima en admin).
 
 ### Migrations Required
 - `webhooks/producer/migrations/0001_initial.py`: modelos OutgoingEvent y WebhookEndpoint.
@@ -30,7 +28,7 @@ Guia operativa para distribuir `django-dumanity-webhooks` de forma privada prime
 ## 1. Pre-release checklist
 
 - Tests y validaciones en verde.
-- Version en `pyproject.toml` actualizada a 3.1.x.
+- Version en `pyproject.toml` actualizada a 0.1.x.
 - `README.md`, `developers-guide.md`, `users-guide.md` sincronizadas.
 - Migraciones generadas y validadas con Django.
 
@@ -50,6 +48,25 @@ python -m twine check dist/*
 cp -R dist/ /ruta/interna/artefactos/
 ```
 
+## 3.1 Consumo desde proyectos con uv
+
+Agregar dependencia privada por tag:
+
+```bash
+uv add "django-dumanity-webhooks @ git+https://github.com/dumanity/django-dumanity-webhooks.git@v0.1.0"
+```
+
+o declararla en `pyproject.toml` del consumidor:
+
+```toml
+[project]
+dependencies = [
+	"django-dumanity-webhooks @ git+https://github.com/dumanity/django-dumanity-webhooks.git@v0.1.0",
+]
+```
+
+Para CI con repo privado, configurar PAT o deploy key.
+
 ## 4. Distribucion automatica interna (GitHub Actions)
 
 Hay un workflow para construir y adjuntar artefactos al crear un release/tag.
@@ -66,9 +83,9 @@ SemVer:
 - PATCH: fixes sin cambios de API.
 
 Ejemplo:
-- 3.0.x → 3.1.0 (breaking changes en idempotencia y resolución)
-- 3.1.x → 3.1.1 (hotfix de security)
-- 3.1.x → 3.2.0 (nuevas features compatibles)
+- 0.1.x → 0.1.1 (hotfix)
+- 0.1.x → 0.2.0 (nuevas features compatibles)
+- 0.x → 1.0.0 (API/operación estable de largo plazo)
 
 ## 6. Post-release
 

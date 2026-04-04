@@ -25,28 +25,38 @@ Resolver de forma reusable el envio y recepcion de webhooks entre aplicaciones s
 
 ## Instalacion
 
-```bash
-uv add django-dumanity-webhooks
-```
-
-Instalacion directa desde GitHub (repositorio privado de la organización Dumanity):
-
-Si estás publicando el paquete en https://github.com/dumanity/dumanity-django-webhooks (repo dedicado):
+Desde proyectos con `uv`, recomendado fijar por tag de Git:
 
 ```bash
-pip install "git+https://github.com/dumanity/dumanity-django-webhooks.git@v0.1.0"
+uv add "django-dumanity-webhooks @ git+https://github.com/dumanity/django-dumanity-webhooks.git@v0.1.0"
 ```
 
-Si el paquete vive en un subdirectorio del repo (monorepo), usa `#subdirectory=`:
+Instalación equivalente con `pip`:
 
 ```bash
-pip install "git+https://github.com/dumanity/dumanity-django-webhooks.git@v0.1.0#subdirectory=django-dumanity-webhooks"
+pip install "django-dumanity-webhooks @ git+https://github.com/dumanity/django-dumanity-webhooks.git@v0.1.0"
 ```
 
-Notas sobre repositorios privados:
+También puedes declararlo manualmente en `pyproject.toml` del consumidor:
 
-- Para instalaciones automatizadas en CI, configura las credenciales de GitHub (PAT) en el runner o usa el token del runner.
-- Alternativa: publicar artefactos como Release (workflow ya incluido) y descargar el wheel `.whl` desde la Release.
+```toml
+[project]
+dependencies = [
+  "django-dumanity-webhooks @ git+https://github.com/dumanity/django-dumanity-webhooks.git@v0.1.0",
+]
+```
+
+Notas sobre repositorio privado:
+
+- En local, usa `gh auth login`, token o SSH key con acceso al repo.
+- En CI, configura credenciales de GitHub (PAT/deploy key) para poder resolver la dependencia.
+- Mantén siempre la dependencia fijada por tag (`@v0.1.0`) para builds reproducibles.
+
+Si el paquete vive en un subdirectorio de un monorepo, usa `#subdirectory=`:
+
+```bash
+uv add "django-dumanity-webhooks @ git+https://github.com/dumanity/django-dumanity-webhooks.git@v0.1.0#subdirectory=django-dumanity-webhooks"
+```
 
 ## Configuracion minima
 

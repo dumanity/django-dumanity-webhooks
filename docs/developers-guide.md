@@ -139,6 +139,21 @@ Objetivo: operar con el menor costo y complejidad posible.
 - Métricas locales vía `/metrics`
 - Sentry Free para errores y alertas básicas
 
+### Build de proyectos consumidores con dependencia privada
+
+Cuando un proyecto consumidor instala este paquete desde GitHub privado en Docker Compose/Coolify:
+
+1. Habilitar BuildKit.
+2. Resolver dependencia en build-time con `uv sync`.
+3. Usar SSH deploy key read-only o secret de build.
+4. Fijar dependencia por tag (`@v0.1.0`) o commit SHA.
+
+Anti-patrones a evitar:
+
+- Usar `@main` (no reproducible).
+- Inyectar PAT vía `ARG` y dejarlo en capas de imagen.
+- Instalar dependencias privadas en runtime (`entrypoint`, `startup`).
+
 ### Variables de entorno sugeridas
 
 - `DJANGO_ENV=production`

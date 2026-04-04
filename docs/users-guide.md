@@ -15,8 +15,19 @@ Permite emitir y recibir webhooks en Django con un stack de seguridad por diseñ
 ## 3. Instalacion
 
 ```bash
-uv add django-dumanity-webhooks
+uv add "django-dumanity-webhooks @ git+https://github.com/dumanity/django-dumanity-webhooks.git@v0.1.0"
 ```
+
+Alternativa declarativa en `pyproject.toml`:
+
+```toml
+[project]
+dependencies = [
+    "django-dumanity-webhooks @ git+https://github.com/dumanity/django-dumanity-webhooks.git@v0.1.0",
+]
+```
+
+Para repositorio privado en CI, configura credenciales GitHub (PAT o deploy key).
 
 ```python
 INSTALLED_APPS += [
@@ -198,3 +209,62 @@ if SENTRY_DSN:
 Regla práctica de operación:
 
 - Si `DeadLetter` o `OutgoingEvent.failed` crece más de lo normal por 15 min, abrir incidente y pausar nuevas integraciones hasta estabilizar.
+
+## 11. Docker Compose / Coolify con repositorio privado
+
+Si tu proyecto consumidor usa Docker Compose o Coolify y este paquete se instala desde GitHub privado, considera lo siguiente:
+
+### Reglas clave
+
+- Instala dependencias privadas en build-time, no en runtime.
+- Usa tag fijo (`@v0.1.0`) para builds reproducibles.
+- No guardes tokens en `Dockerfile` o en variables que terminen dentro de la imagen.
+
+### Dockerfile recomendado (BuildKit + SSH)
+
+```dockerfile
+# syntax=docker/dockerfile:1.7
+FROM python:3.12-slim
+
+WORKDIR /app
+
+RUN apt-get update && apt-get install -y --no-install-recommends \
+        git openssh-client ca-certificates \
+        && rm -rf /var/lib/apt/lists/*
+
+RUN pip install --no-cache-dir uv
+
+COPY pyproject.toml ./
+
+RUN --mount=type=ssh \
+        mkdir -p -m 0700 /root/.ssh && \
+        ssh-keyscan github.com >> /root/.ssh/known_hosts && \
+        uv sync --no-dev
+
+COPY . .
+```
+
+### docker-compose.yml
+
+```yaml
+services:
+    web:
+        build:
+            context: .
+            ssh:
+                - default
+```
+
+Build:
+
+```bash
+DOCKER_BUILDKIT=1 docker compose build
+docker compose up -d
+```
+
+### Coolify
+
+- Configura el source privado de GitHub en Coolify.
+- Usa deploy key SSH read-only o secret de build para autenticación.
+- Verifica que el build soporte BuildKit (`--mount=type=ssh`).
+- Evita instalar dependencias privadas en `entrypoint` o startup command.
