@@ -65,7 +65,7 @@ class WebhookView(APIView):
         - 400: X-Event-ID inválido, payload malformado
         - 403: API Key no encontrada, integración no existe
         - 429: Rate limit excedido para esta integración
-        - 200: Procesado (ok) o duplicado (duplicate)
+        - 200: Procesado (ok), duplicado (duplicate) o prueba de conexión (connection_ok)
         - 500: Error interno en handler o validación
     """
     permission_classes = [HasAPIKey]
@@ -78,7 +78,8 @@ class WebhookView(APIView):
             request: HTTP request con headers de firma y body JSON.
         
         Returns:
-            Response con {"status": "ok"} o {"status": "duplicate"}
+            Response con {"status": "ok"}, {"status": "duplicate"} o
+                       {"status": "connection_ok"} (para eventos de prueba de conexión),
                        o error 403, 429 si fallan controles de entrada.
         """
         integration = _resolve_integration(request)

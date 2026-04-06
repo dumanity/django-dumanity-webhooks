@@ -1,13 +1,15 @@
 # Testing Guide
 
-Suite de tests para `django-dumanity-webhooks` v3.1+ (multi-app security).
+Suite de tests para `django-dumanity-webhooks` 1.0.0.
 
 ## Quick Start
 
 ```bash
-# Desde django-dumanity-webhooks/
-python manage.py test
-# O si no tienes manage.py, crear uno mínimo (ver abajo)
+# Desde django-dumanity-webhooks/ (requiere uv)
+uv run python -m pytest tests.py
+
+# Sin uv (con dependencias ya instaladas)
+python -m pytest tests.py
 ```
 
 ## Test Structure
@@ -39,87 +41,93 @@ Valida patrón Outbox en producer (publish_event → OutgoingEvent pending).
 - `test_publish_event_creates_pending_outgoing_event`: crea con status=pending
 - `test_multiple_endpoints_independent`: endpoints no interfieren
 
+### `ProducerAdminActionTest`
+Valida acciones de admin para gestión de endpoints del producer.
+
+### `ProducerOutboxTransactionalTest`
+Valida comportamiento transaccional del outbox (on_commit callbacks).
+
+### `MetricsExportTest`
+Valida exportación básica de métricas en formato Prometheus.
+
 ### `MultiAppScenarioTest`
 Integración end-to-end: App A publica, App B recibe y procesa.
 
 - `test_app_a_publishes_app_b_receives`: flujo completo A→B con firma y dispatch
 
+### `E2EExampleAppsTest`
+Tests de integración extremo a extremo con ejemplos de configuración.
+
+### `DomainScaffoldCommandTest`
+Valida el comando `start_webhook_domain` para scaffold de dominios.
+
+### `HeaderRedactionTest`
+Valida que headers sensibles se redactan antes de persistir en AuditLog.
+
+- `test_sensitive_headers_are_redacted`: headers sensibles → `[REDACTED]`
+- `test_non_sensitive_headers_are_preserved`: headers no sensibles pasan intactos
+
+### `MetricsSecurityTest`
+Valida control de acceso al endpoint `/metrics`.
+
+- `test_metrics_disabled_by_default`: sin config → 404
+- `test_metrics_enabled_without_token`: habilitado sin token → 200 libre
+- `test_metrics_enabled_with_valid_token`: habilitado con token correcto → 200
+- `test_metrics_enabled_with_invalid_token`: token incorrecto → 403
+
 ## Setup
 
-### Opción 1: Usar Django Project existente
-
-Si tienes un proyecto Django que usa `django-dumanity-webhooks`:
+### Opción recomendada: pytest con uv
 
 ```bash
-python manage.py test webhooks
+# Instalar dependencias de desarrollo
+uv sync
+
+# Ejecutar toda la suite
+uv run python -m pytest tests.py
+
+# Con verbose output
+uv run python -m pytest tests.py -v
+
+# Test específico por clase
+uv run python -m pytest tests.py::FailClosedResolutionTest -v
+
+# Test específico por nombre de método
+uv run python -m pytest tests.py -k "test_rate_limit_by_integration_id"
 ```
 
-### Opción 2: Setup mínimo para desarrollo
-
-Crear `manage.py` temporal en `django-dumanity-webhooks/`:
-
-```python
-#!/usr/bin/env python
-import os
-import sys
-import django
-from django.conf import settings
-from django.core.management import execute_from_command_line
-
-if not settings.configured:
-    settings.configure(
-        DEBUG=True,
-        DATABASES={
-            'default': {
-                'ENGINE': 'django.db.backends.sqlite3',
-                'NAME': ':memory:',
-            }
-        },
-        INSTALLED_APPS=[
-            'django.contrib.auth',
-            'django.contrib.contenttypes',
-            'rest_framework',
-            'rest_framework_api_key',
-            'webhooks.core',
-            'webhooks.producer',
-            'webhooks.receiver',
-        ],
-        SECRET_KEY='example-test-secret-key',
-    )
-    django.setup()
-
-if __name__ == "__main__":
-    execute_from_command_line(sys.argv)
-```
-
-Luego:
+### Opción alternativa: sin uv
 
 ```bash
-python manage.py test
+pip install -e .
+pip install pytest pytest-django
+python -m pytest tests.py
 ```
 
 ## Running Specific Tests
 
 ```bash
 # Solo tests de fail-closed
-python manage.py test FailClosedResolutionTest
+python -m pytest tests.py::FailClosedResolutionTest
 
 # Solo tests de idempotencia
-python manage.py test IdempotencyScopedTest
+python -m pytest tests.py::IdempotencyScopedTest
+
+# Solo tests de seguridad (headers y métricas)
+python -m pytest tests.py::HeaderRedactionTest tests.py::MetricsSecurityTest
 
 # Con verbose output
-python manage.py test -v 2
+python -m pytest tests.py -v
 
 # Con coverage
-coverage run --source='webhooks' manage.py test
-coverage report
+python -m pytest tests.py --cov=webhooks --cov-report=term-missing
 ```
 
 ## Coverage Goals
 
 - `webhooks.receiver.api`: 100% (crítico: resolución y rate limit)
 - `webhooks.receiver.models`: 100% (contratos de datos)
-- `webhooks.receiver.services`: 90%+ (pipeline complejo)
+- `webhooks.core.security`: 100% (redacción de headers sensibles)
 - `webhooks.producer.services`: 90%+
 - `webhooks.producer.tasks`: 80%+ (depende de scheduler externo)
 
@@ -135,19 +143,17 @@ on: [push, pull_request]
 jobs:
   test:
     runs-on: ubuntu-latest
-    strategy:
-      matrix:
-        python-version: ['3.12']
-    
     steps:
-      - uses: actions/checkout@v3
-      - uses: actions/setup-python@v4
+      - uses: actions/checkout@v4
+      - uses: actions/setup-python@v5
         with:
-          python-version: ${{ matrix.python-version }}
-      - run: pip install -e django-dumanity-webhooks/
-      - run: pip install coverage
-      - run: cd django-dumanity-webhooks && python manage.py test
-      - run: coverage run --source='webhooks' manage.py test && coverage report
+          python-version: "3.12"
+      - name: Install uv
+        run: pip install uv
+      - name: Install dependencies
+        run: uv sync
+      - name: Run tests
+        run: uv run python -m pytest tests.py
 ```
 
 ## Known Limitations
@@ -156,25 +162,24 @@ jobs:
 - Rate limit tests no son distribuidos (redis/cluster)
 - Mocking de HTTP sender (no prueba network real)
 
-Para tests de integración real, ver `example/` para manual testing entre apps.
+Para tests de integración real, ver `scripts/load_test_receiver.py`.
 
 ## Troubleshooting
 
 ### Error: "ModuleNotFoundError: No module named 'webhooks'"
 
 ```bash
-cd django-dumanity-webhooks
 pip install -e .
+# o con uv:
+uv sync
 ```
 
 ### Error: "OperationalError: no such table"
 
-Migraciones no aplicadas. Usar `-v 2` para debug:
-
-```bash
-python manage.py test -v 2
-```
+Migraciones no aplicadas. pytest-django las aplica automáticamente cuando
+`DJANGO_SETTINGS_MODULE=tests_settings` está configurado en `pytest.ini`.
 
 ### Fixture Loading Issues
 
-Tests crean datos en setUp(). Si necesitas fixtures, ver Django TestCase docs.
+Tests crean datos en `setUp()`. Si necesitas fixtures, ver Django TestCase docs.
+

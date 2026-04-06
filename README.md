@@ -35,13 +35,13 @@ Resolver de forma reusable el envio y recepcion de webhooks entre aplicaciones s
 Desde proyectos con `uv`, recomendado fijar por tag de Git:
 
 ```bash
-uv add "django-dumanity-webhooks @ git+https://github.com/dumanity/django-dumanity-webhooks.git@v0.3.0"
+uv add "django-dumanity-webhooks @ git+https://github.com/dumanity/django-dumanity-webhooks.git@v1.0.0"
 ```
 
 Instalación equivalente con `pip`:
 
 ```bash
-pip install "django-dumanity-webhooks @ git+https://github.com/dumanity/django-dumanity-webhooks.git@v0.3.0"
+pip install "django-dumanity-webhooks @ git+https://github.com/dumanity/django-dumanity-webhooks.git@v1.0.0"
 ```
 
 También puedes declararlo manualmente en `pyproject.toml` del consumidor:
@@ -49,7 +49,7 @@ También puedes declararlo manualmente en `pyproject.toml` del consumidor:
 ```toml
 [project]
 dependencies = [
-  "django-dumanity-webhooks @ git+https://github.com/dumanity/django-dumanity-webhooks.git@v0.3.0",
+  "django-dumanity-webhooks @ git+https://github.com/dumanity/django-dumanity-webhooks.git@v1.0.0",
 ]
 ```
 
@@ -57,12 +57,12 @@ Notas sobre repositorio privado:
 
 - En local, usa `gh auth login`, token o SSH key con acceso al repo.
 - En CI, configura credenciales de GitHub (PAT/deploy key) para poder resolver la dependencia.
-- Mantén siempre la dependencia fijada por tag (`@v0.3.0`) para builds reproducibles.
+- Mantén siempre la dependencia fijada por tag (`@v1.0.0`) para builds reproducibles.
 
 Si el paquete vive en un subdirectorio de un monorepo, usa `#subdirectory=`:
 
 ```bash
-uv add "django-dumanity-webhooks @ git+https://github.com/dumanity/django-dumanity-webhooks.git@v0.3.0#subdirectory=django-dumanity-webhooks"
+uv add "django-dumanity-webhooks @ git+https://github.com/dumanity/django-dumanity-webhooks.git@v1.0.0#subdirectory=django-dumanity-webhooks"
 ```
 
 ## Configuracion minima
@@ -132,11 +132,12 @@ webhooks-info test-endpoint \
 
 1. API Key gate.
 2. Rate limit por integracion.
-3. Verificacion de firma HMAC con anti-replay.
-4. Idempotencia por `X-Event-ID`.
-5. Validacion JSON Schema del tipo de evento.
-6. Dispatch a handler registrado.
-7. Auditoria (`AuditLog`) y trazabilidad (`EventLog`, `DeadLetter`).
+3. Auditoria (`AuditLog`) — registra el request con headers redactados antes de continuar.
+4. Verificacion de firma HMAC con anti-replay.
+5. Idempotencia por `X-Event-ID`.
+6. Validacion JSON Schema del tipo de evento.
+7. Dispatch a handler registrado.
+8. Trazabilidad (`EventLog`, `DeadLetter`).
 
 ## Seguridad por diseño
 

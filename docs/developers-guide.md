@@ -196,7 +196,7 @@ Si cambia el payload, no sobreescribas el mismo evento: crea `v2` y conserva `v1
 - **Métricas**: contadores in-memory. Se pierden al reiniciar procesos; para HA usar Prometheus/OpenTelemetry.
 - **Worker async**: singleton. Para multiworker distribuido considerar task queue (Celery, APScheduler).
 
-### Garantías implementadas (v3.1+)
+### Garantías implementadas (v1.0.0)
 - **Resolución fail-closed**: ninguna integración sin API key válida.
 - **Idempotencia scoped**: colisión imposible entre productores distintos (por design).
 - **Rate limit determinístico**: clave por integration_id (UUID), no ambiguo.
@@ -206,11 +206,11 @@ Si cambia el payload, no sobreescribas el mismo evento: crea `v2` y conserva `v1
 
 ## 8. Roadmap sugerido
 
-1. ✓ ~~Resolver integracion desde API key de forma estricta~~ (hecho en v3.1).
-2. ✓ ~~Rate limit por integration_id~~ (hecho en v3.1).
-3. ✓ ~~Idempotencia scoped por integración~~ (hecho en v3.1).
-4. ✓ ~~Configurar max retries y timeout por endpoint~~ (hecho en v3.1).
-5. ✓ ~~Exportar metricas a Prometheus/OpenTelemetry~~ (endpoint `/metrics` básico en v3.1; OTel avanzado queda en backlog).
+1. ✓ ~~Resolver integracion desde API key de forma estricta~~ (hecho en v1.0.0).
+2. ✓ ~~Rate limit por integration_id~~ (hecho en v1.0.0).
+3. ✓ ~~Idempotencia scoped por integración~~ (hecho en v1.0.0).
+4. ✓ ~~Configurar max retries y timeout por endpoint~~ (hecho en v1.0.0).
+5. ✓ ~~Exportar metricas a Prometheus/OpenTelemetry~~ (endpoint `/metrics` básico en v1.0.0; OTel avanzado queda en backlog).
 6. Dashboard operativo para DeadLetter y AuditLog (backlog).
 7. Event versioning y schema evolution helpers (backlog).
 
@@ -233,7 +233,7 @@ Cuando un proyecto consumidor instala este paquete desde GitHub privado en Docke
 1. Habilitar BuildKit.
 2. Resolver dependencia en build-time con `uv sync`.
 3. Usar SSH deploy key read-only o secret de build.
-4. Fijar dependencia por tag (`@v0.3.0`) o commit SHA.
+4. Fijar dependencia por tag (`@v1.0.0`) o commit SHA.
 
 Anti-patrones a evitar:
 
