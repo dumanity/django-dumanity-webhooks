@@ -47,8 +47,9 @@ class Command(BaseCommand):
         if not dead_letters:
             self.stdout.write("- none")
         for item in dead_letters:
+            reason = (item.get("reason") or "")[:120]
             self.stdout.write(
-                f"- id={item['id']} retries={item['retries']} reason={item['reason'][:120]}"
+                f"- id={item['id']} retries={item['retries']} reason={reason}"
             )
 
         self.stdout.write("")

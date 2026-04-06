@@ -144,7 +144,8 @@ def _render_files(domain: str, package_name: str) -> dict[str, str]:
             "2. Replace sample events in events.py with domain contracts.\n"
             "3. Update schemas in registry.py.\n"
             "4. Implement handlers.py with real business logic.\n"
-            "5. Add tests for command and event flows in your project.\n"
+            "5. Run contract validation: `python manage.py webhooks_validate_contracts`.\n"
+            "6. Add tests for command and event flows in your project.\n"
         ),
     }
 
@@ -198,6 +199,7 @@ class Command(BaseCommand):
             self.stdout.write(self.style.SUCCESS(f"[dry-run] Package: {package_dir}"))
             for rel_path in files:
                 self.stdout.write(f"[dry-run] create: {package_dir / rel_path}")
+            self.stdout.write("[dry-run] next: add package to INSTALLED_APPS and run webhooks_validate_contracts")
             return
 
         package_dir.mkdir(parents=True, exist_ok=False)
@@ -206,4 +208,7 @@ class Command(BaseCommand):
             target.write_text(content, encoding="utf-8")
 
         self.stdout.write(self.style.SUCCESS(f"Created webhook domain scaffold at: {package_dir}"))
-        self.stdout.write("Add the generated package to INSTALLED_APPS in your Django project.")
+        self.stdout.write("Next steps:")
+        self.stdout.write("1) Add the generated package to INSTALLED_APPS in your Django project.")
+        self.stdout.write("2) Replace sample events/schemas/handlers with your domain contracts.")
+        self.stdout.write("3) Run: python manage.py webhooks_validate_contracts")

@@ -15,7 +15,7 @@ Permite emitir y recibir webhooks en Django con un stack de seguridad por diseñ
 ## 3. Instalacion
 
 ```bash
-uv add "django-dumanity-webhooks @ git+https://github.com/dumanity/django-dumanity-webhooks.git@v1.0.0"
+uv add "django-dumanity-webhooks @ git+https://github.com/dumanity/django-dumanity-webhooks.git@v1.1.0"
 ```
 
 Alternativa declarativa en `pyproject.toml`:
@@ -23,7 +23,7 @@ Alternativa declarativa en `pyproject.toml`:
 ```toml
 [project]
 dependencies = [
-    "django-dumanity-webhooks @ git+https://github.com/dumanity/django-dumanity-webhooks.git@v1.0.0",
+    "django-dumanity-webhooks @ git+https://github.com/dumanity/django-dumanity-webhooks.git@v1.1.0",
 ]
 ```
 
@@ -151,7 +151,7 @@ Objetivo: que **Proyecto A** y **Proyecto B** se envíen eventos en ambos sentid
 En A y en B:
 
 ```bash
-uv add "django-dumanity-webhooks @ git+https://github.com/dumanity/django-dumanity-webhooks.git@v1.0.0"
+uv add "django-dumanity-webhooks @ git+https://github.com/dumanity/django-dumanity-webhooks.git@v1.1.0"
 ```
 
 ```python
@@ -293,6 +293,10 @@ publish_event(endpoint_b_to_a, {
 - Revisar `DeadLetter` para eventos no procesados
 - Revisar `AuditLog` para trazabilidad de entrada
 - Exponer `/metrics` para scraping Prometheus (formato texto)
+- Listar fallos operativos:
+  - `python manage.py webhooks_list_failures`
+- Replay seguro de DLQ:
+  - `python manage.py webhooks_replay --dead-letter-id <id> --endpoint-id <uuid> --reason "<motivo>" --dry-run`
 
 Notas de métricas (modo lean):
 
@@ -330,6 +334,7 @@ Flujo recomendado de implementación:
 3. Registrar el handler en `handlers.py`.
 4. Cargar registros en `apps.py` dentro de `ready()`.
 5. Usar `signals.py` solo cuando necesites emitir desde eventos internos de Django.
+6. Validar contratos registrados: `python manage.py webhooks_validate_contracts`.
 
 Responsabilidades esperadas:
 
@@ -425,7 +430,7 @@ Si tu proyecto consumidor usa Docker Compose o Coolify y este paquete se instala
 ### Reglas clave
 
 - Instala dependencias privadas en build-time, no en runtime.
-- Usa tag fijo (`@v1.0.0`) para builds reproducibles.
+- Usa tag fijo (`@v1.1.0`) para builds reproducibles.
 - No guardes tokens en `Dockerfile` o en variables que terminen dentro de la imagen.
 
 ### Dockerfile recomendado (BuildKit + SSH)

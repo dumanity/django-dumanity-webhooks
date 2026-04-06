@@ -4,7 +4,7 @@ build-backend = "hatchling.build"
 
 [project]
 name = "django-dumanity-webhooks"
-version = "1.0.0"
+version = "1.1.0"
 description = "Secure-by-design webhook infrastructure for Django apps"
 readme = "README.md"
 license = { text = "Proprietary" }

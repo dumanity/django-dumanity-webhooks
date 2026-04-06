@@ -35,13 +35,13 @@ Resolver de forma reusable el envio y recepcion de webhooks entre aplicaciones s
 Desde proyectos con `uv`, recomendado fijar por tag de Git:
 
 ```bash
-uv add "django-dumanity-webhooks @ git+https://github.com/dumanity/django-dumanity-webhooks.git@v1.0.0"
+uv add "django-dumanity-webhooks @ git+https://github.com/dumanity/django-dumanity-webhooks.git@v1.1.0"
 ```
 
 Instalación equivalente con `pip`:
 
 ```bash
-pip install "django-dumanity-webhooks @ git+https://github.com/dumanity/django-dumanity-webhooks.git@v1.0.0"
+pip install "django-dumanity-webhooks @ git+https://github.com/dumanity/django-dumanity-webhooks.git@v1.1.0"
 ```
 
 También puedes declararlo manualmente en `pyproject.toml` del consumidor:
@@ -49,7 +49,7 @@ También puedes declararlo manualmente en `pyproject.toml` del consumidor:
 ```toml
 [project]
 dependencies = [
-  "django-dumanity-webhooks @ git+https://github.com/dumanity/django-dumanity-webhooks.git@v1.0.0",
+  "django-dumanity-webhooks @ git+https://github.com/dumanity/django-dumanity-webhooks.git@v1.1.0",
 ]
 ```
 
@@ -57,12 +57,12 @@ Notas sobre repositorio privado:
 
 - En local, usa `gh auth login`, token o SSH key con acceso al repo.
 - En CI, configura credenciales de GitHub (PAT/deploy key) para poder resolver la dependencia.
-- Mantén siempre la dependencia fijada por tag (`@v1.0.0`) para builds reproducibles.
+- Mantén siempre la dependencia fijada por tag (`@v1.1.0`) para builds reproducibles.
 
 Si el paquete vive en un subdirectorio de un monorepo, usa `#subdirectory=`:
 
 ```bash
-uv add "django-dumanity-webhooks @ git+https://github.com/dumanity/django-dumanity-webhooks.git@v1.0.0#subdirectory=django-dumanity-webhooks"
+uv add "django-dumanity-webhooks @ git+https://github.com/dumanity/django-dumanity-webhooks.git@v1.1.0#subdirectory=django-dumanity-webhooks"
 ```
 
 ## Configuracion minima
@@ -81,6 +81,11 @@ Internamente, las apps usan labels unicos para evitar colisiones con paquetes co
 python manage.py makemigrations
 python manage.py migrate
 ```
+
+## Quickstart en 10 minutos
+
+- `docs/quickstart.md`
+- Incluye bootstrap automático, primer evento end-to-end y troubleshooting.
 
 ## Contrato de firma
 
@@ -178,6 +183,18 @@ Comportamiento:
 - Revisar periodicamente `OutgoingEvent` con status `failed`
 - Monitorear `DeadLetter` y `AuditLog`
 - Rotar secretos periodicamente
+- Listar fallos: `python manage.py webhooks_list_failures`
+- Replay seguro (con trazabilidad): `python manage.py webhooks_replay --dead-letter-id <id> --endpoint-id <uuid> --reason "<motivo>" --dry-run`
+
+## Comandos de agilidad (v1.1.0)
+
+- Bootstrap inicial seguro:
+  - `python manage.py webhooks_bootstrap`
+- Validación de contratos:
+  - `python manage.py webhooks_validate_contracts`
+- Operación:
+  - `python manage.py webhooks_list_failures`
+  - `python manage.py webhooks_replay ...`
 
 ## Para desarrolladores
 
@@ -279,3 +296,5 @@ Referencia tecnica ampliada en:
 - `docs/incident-playbook.md`
 - `docs/examples/audit-record-template.json`
 - `docs/release.md`
+- `docs/quickstart.md`
+- `docs/hardening-guide.md`

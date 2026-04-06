@@ -2,6 +2,46 @@
 
 All notable changes to this project will be documented in this file.
 
+## [1.1.0] – 2026-04-06
+
+### Security
+
+- **Replay seguro con trazabilidad** – Nuevo comando `webhooks_replay` con
+  validaciones fail-safe: requiere `--reason`, soporta `--dry-run`, detecta
+  colisiones de replay en outbox y registra metadatos de replay en `DeadLetter`
+  (`replayed_at`, `replay_reason`, `replay_event_id`).
+
+- **Contract-first validable** – Nuevo comando `webhooks_validate_contracts`
+  para detectar contratos inválidos (tipo de evento, estructura de schema y
+  consistencia básica de versionado) con mensajes accionables.
+
+### Added
+
+- **Bootstrap automático** – Nuevo comando `webhooks_bootstrap` para setup
+  inicial de receiver/producer con defaults seguros y salida orientada a vault.
+
+- **Operación CLI/management** – Nuevo comando `webhooks_list_failures` para
+  listar fallos operativos (`OutgoingEvent.failed`, `DeadLetter`) y guiar
+  resolución/replay seguro.
+
+- **Quickstart 10 minutos** – Nuevo `docs/quickstart.md` con flujo copy/paste
+  end-to-end y troubleshooting accionable.
+
+- **Hardening guide** – Nuevo `docs/hardening-guide.md` con checklist de
+  producción alineado al comportamiento real del código.
+
+### Changed
+
+- **Scaffold de dominio mejorado** – `start_webhook_domain` ahora incluye
+  mensajes de next steps más guiados y referencia directa a
+  `webhooks_validate_contracts`.
+
+- **DX de test-endpoint** – `webhooks-info test-endpoint` ahora imprime
+  resumen didáctico (resultado, estado HTTP, latencia, y pasos de resolución).
+
+- **Versionado a v1.1.0** – Actualizado `pyproject.toml`, `webhooks.__version__`
+  y referencias de documentación de instalación por tag.
+
 ## [1.0.1] – doc-code alignment
 
 ### Documentation

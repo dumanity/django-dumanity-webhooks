@@ -8,6 +8,7 @@ import uuid
 import json
 import time
 import tempfile
+import io
 from pathlib import Path
 from unittest.mock import Mock, patch
 
@@ -25,7 +26,7 @@ from webhooks.core.signing import sign
 from webhooks.core.metrics import metrics, export_prometheus_text, inc
 from webhooks.core.registry import register_event, _registry
 from webhooks.core.handlers import register_handler, _HANDLER_REGISTRY
-from webhooks.receiver.models import Integration, Secret, EventLog
+from webhooks.receiver.models import Integration, Secret, EventLog, DeadLetter
 from webhooks.receiver.api import _resolve_integration, MetricsView, WebhookView
 from webhooks.receiver.services import WebhookService
 from webhooks.receiver.rate_limit import is_rate_limited
@@ -786,6 +787,135 @@ class DomainScaffoldCommandTest(TestCase):
 
             self.assertTrue((Path(tmp_dir) / "orders_events").exists())
             self.assertTrue((Path(tmp_dir) / "orders_events_2").exists())
+
+    def test_start_webhook_domain_dry_run_shows_next_step_hint(self):
+        stream = io.StringIO()
+        with tempfile.TemporaryDirectory() as tmp_dir:
+            call_command("start_webhook_domain", "orders", output_dir=tmp_dir, dry_run=True, stdout=stream)
+        output = stream.getvalue()
+        self.assertIn("webhooks_validate_contracts", output)
+
+
+class BootstrapAndOpsCommandsTest(TestCase):
+    def test_webhooks_bootstrap_receiver_only_creates_integration_and_secret(self):
+        stream = io.StringIO()
+        call_command(
+            "webhooks_bootstrap",
+            integration_name="producer-x",
+            receiver_only=True,
+            secret="whsec_test_bootstrap",
+            stdout=stream,
+        )
+        self.assertTrue(Integration.objects.filter(name="producer-x").exists())
+        integration = Integration.objects.get(name="producer-x")
+        self.assertTrue(Secret.objects.filter(integration=integration, secret="whsec_test_bootstrap").exists())
+
+    def test_webhooks_bootstrap_dry_run_writes_no_rows(self):
+        stream = io.StringIO()
+        call_command(
+            "webhooks_bootstrap",
+            integration_name="producer-y",
+            endpoint_name="receiver-y",
+            dry_run=True,
+            stdout=stream,
+        )
+        self.assertFalse(Integration.objects.filter(name="producer-y").exists())
+        self.assertFalse(WebhookEndpoint.objects.filter(name="receiver-y").exists())
+
+    def test_webhooks_validate_contracts_rejects_invalid_contract(self):
+        _registry.clear()
+        register_event({"type": "bad-event", "payload_schema": {"type": "array"}})
+        with self.assertRaises(Exception):
+            call_command("webhooks_validate_contracts")
+
+    def test_webhooks_validate_contracts_accepts_valid_contract(self):
+        _registry.clear()
+        register_event(
+            {
+                "type": "orders.created.v1",
+                "payload_schema": {
+                    "type": "object",
+                    "properties": {"id": {"type": "string"}},
+                    "required": ["id"],
+                },
+            }
+        )
+        stream = io.StringIO()
+        call_command("webhooks_validate_contracts", stdout=stream)
+        self.assertIn("Contracts valid", stream.getvalue())
+
+    def test_webhooks_replay_updates_deadletter_traceability(self):
+        endpoint = WebhookEndpoint.objects.create(
+            name="replay-endpoint",
+            url="https://example.com/replay",
+            secret="whsec_replay",
+            is_active=True,
+        )
+        payload = {
+            "id": str(uuid.uuid4()),
+            "type": "orders.created.v1",
+            "data": {"id": "o-1"},
+        }
+        dead = DeadLetter.objects.create(payload=payload, reason="handler boom", retries=1)
+        call_command(
+            "webhooks_replay",
+            dead_letter_id=dead.id,
+            endpoint_id=str(endpoint.id),
+            reason="manual fix applied",
+        )
+        dead.refresh_from_db()
+        self.assertIsNotNone(dead.replayed_at)
+        self.assertEqual(dead.replay_reason, "manual fix applied")
+        self.assertIsNotNone(dead.replay_event_id)
+
+    def test_webhooks_replay_dry_run_keeps_deadletter_unchanged(self):
+        endpoint = WebhookEndpoint.objects.create(
+            name="replay-endpoint-dry",
+            url="https://example.com/replay-dry",
+            secret="whsec_replay_dry",
+            is_active=True,
+        )
+        payload = {
+            "id": str(uuid.uuid4()),
+            "type": "orders.created.v1",
+            "data": {"id": "o-2"},
+        }
+        dead = DeadLetter.objects.create(payload=payload, reason="handler boom", retries=1)
+        call_command(
+            "webhooks_replay",
+            dead_letter_id=dead.id,
+            endpoint_id=str(endpoint.id),
+            reason="dry validation",
+            dry_run=True,
+        )
+        dead.refresh_from_db()
+        self.assertIsNone(dead.replayed_at)
+        self.assertIsNone(dead.replay_reason)
+        self.assertIsNone(dead.replay_event_id)
+
+    def test_webhooks_list_failures_runs(self):
+        endpoint = WebhookEndpoint.objects.create(
+            name="failed-endpoint",
+            url="https://example.com/failed",
+            secret="whsec_failed",
+            is_active=True,
+        )
+        OutgoingEvent.objects.create(
+            endpoint=endpoint,
+            payload={"id": str(uuid.uuid4()), "type": "orders.created.v1", "data": {}},
+            status="failed",
+            attempts=3,
+        )
+        DeadLetter.objects.create(
+            payload={"id": str(uuid.uuid4()), "type": "orders.created.v1", "data": {}},
+            reason="boom",
+            retries=2,
+        )
+        stream = io.StringIO()
+        call_command("webhooks_list_failures", stdout=stream)
+        out = stream.getvalue()
+        self.assertIn("Failed outgoing events", out)
+        self.assertIn("Dead letters", out)
 
 
 # ---------------------------------------------------------------------------

@@ -3,6 +3,7 @@ from __future__ import annotations
 import uuid
 
 from django.core.management.base import BaseCommand, CommandError
+from django.utils.timezone import now
 
 from webhooks.producer.models import OutgoingEvent, WebhookEndpoint
 from webhooks.producer.services import publish_event
@@ -73,5 +74,9 @@ class Command(BaseCommand):
             return
 
         event = publish_event(endpoint=endpoint, payload=payload)
+        dead_letter.replayed_at = now()
+        dead_letter.replay_reason = reason
+        dead_letter.replay_event_id = replay_id
+        dead_letter.save(update_fields=["replayed_at", "replay_reason", "replay_event_id"])
         self.stdout.write(self.style.SUCCESS("Replay enqueued in outbox."))
         self.stdout.write(f"outgoing_event_id={event.id} replay_event_id={replay_id}")
