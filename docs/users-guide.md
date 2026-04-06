@@ -51,6 +51,10 @@ WebhookEndpoint.objects.create(
     name="billing-service",
     url="https://billing.example.com/webhooks/",
     secret="whsec_example_123",
+    is_active=True,
+    max_retries=5,
+    request_timeout_seconds=10,
+)
 ```
 
 Campos recomendados por endpoint:
@@ -133,6 +137,8 @@ integration = Integration.objects.create(name="producer-a", api_key=api_key)
 Secret.objects.create(
     integration=integration,
     secret="whsec_example_123",
+    is_active=True,
+    expires_at=now() + timedelta(days=30),
 )
 ```
 
