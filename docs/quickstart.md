@@ -34,6 +34,11 @@ python manage.py webhooks_bootstrap \
 
 Guarda en vault los secretos/keys mostrados por el comando.
 
+Notas rápidas:
+
+- Si repites bootstrap para la misma integración, se reutiliza la integración y se crea un secreto nuevo para rotación segura.
+- Si ya existe endpoint y quieres actualizar URL/secret, agrega `--update-endpoint`.
+
 ## 4) Crear un contrato de evento y validarlo
 
 Si ya tienes un dominio scaffold:
@@ -73,6 +78,14 @@ publish_event(endpoint, {
 - `EventLog` en receiver contiene el `event_id`.
 - `OutgoingEvent` en producer avanza a `delivered`.
 
+Chequeo operativo mínimo:
+
+```bash
+python manage.py webhooks_list_failures
+```
+
+Debería mostrar sin fallos o con lista accionable para resolver.
+
 ## Troubleshooting rápido
 
 - `Invalid signature`: secreto incorrecto/expirado o timestamp fuera de tolerancia.  
@@ -85,3 +98,7 @@ publish_event(endpoint, {
   **Acción:** reduce burst o ajusta ventana/límite operativos.
 - Outbox `failed` / DLQ crece: endpoint/handler inestable.  
   **Acción:** `python manage.py webhooks_list_failures` y luego replay controlado con `--dry-run`.
+- `Replay blocked: already replayed`: ese DLQ ya fue replayado antes.  
+  **Acción:** crea un nuevo `event_id` (`--new-event-id`) o usa `--allow-previously-replayed` solo si controlaste efectos duplicados downstream.
+- `Contract validation failed`: contrato inválido o sin versionado adecuado.  
+  **Acción:** ejecuta `python manage.py webhooks_validate_contracts` y corrige `type` + `payload_schema` según el mensaje.

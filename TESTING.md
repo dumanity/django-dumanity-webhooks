@@ -10,6 +10,9 @@ uv run python -m pytest tests.py
 
 # Sin uv (con dependencias ya instaladas)
 python -m pytest tests.py
+
+# Flujo DX recomendado (check migraciones + contratos + tests)
+bash scripts/dev_check.sh
 ```
 
 ## Test Structure
@@ -97,6 +100,9 @@ uv run python -m pytest tests.py::FailClosedResolutionTest -v
 
 # Test específico por nombre de método
 uv run python -m pytest tests.py -k "test_rate_limit_by_integration_id"
+
+# Gate local completo
+bash scripts/dev_check.sh
 ```
 
 ### Opción alternativa: sin uv

@@ -2,6 +2,12 @@
 
 Guia para integradores del paquete `django-dumanity-webhooks`.
 
+Lecturas recomendadas antes de integrar:
+
+- Quickstart: `docs/quickstart.md`
+- Hardening de producción: `docs/hardening-guide.md`
+- Testing local: `TESTING.md`
+
 ## 1. Que resuelve
 
 Permite emitir y recibir webhooks en Django con un stack de seguridad por diseño, evitando implementar manualmente firma, idempotencia y validaciones. Soporta múltiples aplicaciones (A, B, C, ...) actuando simultáneamente como productoras y receptoras con garantías de aislamiento.

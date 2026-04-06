@@ -87,6 +87,14 @@ python manage.py migrate
 - `docs/quickstart.md`
 - Incluye bootstrap automático, primer evento end-to-end y troubleshooting.
 
+## Documentacion principal
+
+- Quickstart (10 minutos): `docs/quickstart.md`
+- Guia de hardening: `docs/hardening-guide.md`
+- Guia de usuario: `docs/users-guide.md`
+- Guia de desarrollo: `docs/developers-guide.md`
+- Guia de testing: `TESTING.md`
+
 ## Contrato de firma
 
 Header usado por el paquete:
@@ -185,6 +193,7 @@ Comportamiento:
 - Rotar secretos periodicamente
 - Listar fallos: `python manage.py webhooks_list_failures`
 - Replay seguro (con trazabilidad): `python manage.py webhooks_replay --dead-letter-id <id> --endpoint-id <uuid> --reason "<motivo>" --dry-run`
+- Si ya hubo replay previo del mismo DLQ, se bloquea por defecto. Usa `--allow-previously-replayed` solo de forma excepcional y documentada.
 
 ## Comandos de agilidad (v1.1.0)
 

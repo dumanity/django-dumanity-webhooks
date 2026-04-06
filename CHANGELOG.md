@@ -15,6 +15,11 @@ All notable changes to this project will be documented in this file.
   para detectar contratos inválidos (tipo de evento, estructura de schema y
   consistencia básica de versionado) con mensajes accionables.
 
+- **Replay aún más seguro** – `webhooks_replay` bloquea por defecto
+  re-ejecuciones sobre `DeadLetter` ya replayado (requiere
+  `--allow-previously-replayed` para override explícito) y evita colisiones de
+  `event_id` contra cualquier estado existente en outbox.
+
 ### Added
 
 - **Bootstrap automático** – Nuevo comando `webhooks_bootstrap` para setup
@@ -38,6 +43,17 @@ All notable changes to this project will be documented in this file.
 
 - **DX de test-endpoint** – `webhooks-info test-endpoint` ahora imprime
   resumen didáctico (resultado, estado HTTP, latencia, y pasos de resolución).
+
+- **Bootstrap idempotente para onboarding** – `webhooks_bootstrap` ahora puede
+  reutilizar integraciones existentes sin fallar y actualizar endpoints
+  existentes de forma explícita mediante `--update-endpoint`.
+
+- **Compatibilidad de contratos reforzada** – `webhooks_validate_contracts`
+  ahora advierte gaps de versionado y posibles breaking changes por remoción de
+  campos `required` entre versiones.
+
+- **Flujo DX local rápido** – Nuevo script `scripts/dev_check.sh` para ejecutar
+  check de migraciones, validación de contratos y tests en un solo comando.
 
 - **Versionado a v1.1.0** – Actualizado `pyproject.toml`, `webhooks.__version__`
   y referencias de documentación de instalación por tag.

@@ -2,6 +2,12 @@
 
 Guia para mantenedores y contribuidores de `django-dumanity-webhooks`.
 
+Documentos de referencia rápida:
+
+- Quickstart: `docs/quickstart.md`
+- Hardening guide: `docs/hardening-guide.md`
+- Testing guide: `TESTING.md`
+
 ## Lectura rapida si estas cansado
 
 Si solo necesitas el mapa mental:

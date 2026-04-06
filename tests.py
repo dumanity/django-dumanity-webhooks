@@ -822,6 +822,42 @@ class BootstrapAndOpsCommandsTest(TestCase):
         self.assertFalse(Integration.objects.filter(name="producer-y").exists())
         self.assertFalse(WebhookEndpoint.objects.filter(name="receiver-y").exists())
 
+    def test_webhooks_bootstrap_reuses_existing_integration(self):
+        api_key_obj, _ = APIKey.objects.create_key(name="producer-z")
+        integration = Integration.objects.create(name="producer-z", api_key=api_key_obj)
+
+        call_command(
+            "webhooks_bootstrap",
+            integration_name="producer-z",
+            receiver_only=True,
+            secret="whsec_reuse_1",
+        )
+
+        self.assertEqual(Integration.objects.filter(name="producer-z").count(), 1)
+        self.assertTrue(Secret.objects.filter(integration=integration, secret="whsec_reuse_1").exists())
+
+    def test_webhooks_bootstrap_update_endpoint_updates_existing_endpoint(self):
+        endpoint = WebhookEndpoint.objects.create(
+            name="endpoint-z",
+            url="https://old.example.com/webhooks/",
+            secret="whsec_old",
+            is_active=False,
+        )
+
+        call_command(
+            "webhooks_bootstrap",
+            producer_only=True,
+            endpoint_name="endpoint-z",
+            endpoint_url="https://new.example.com/webhooks/",
+            secret="whsec_new",
+            update_endpoint=True,
+        )
+
+        endpoint.refresh_from_db()
+        self.assertEqual(endpoint.url, "https://new.example.com/webhooks/")
+        self.assertEqual(endpoint.secret, "whsec_new")
+        self.assertTrue(endpoint.is_active)
+
     def test_webhooks_validate_contracts_rejects_invalid_contract(self):
         _registry.clear()
         register_event({"type": "bad-event", "payload_schema": {"type": "array"}})
@@ -843,6 +879,67 @@ class BootstrapAndOpsCommandsTest(TestCase):
         stream = io.StringIO()
         call_command("webhooks_validate_contracts", stdout=stream)
         self.assertIn("Contracts valid", stream.getvalue())
+
+    def test_webhooks_validate_contracts_warns_on_version_gap(self):
+        _registry.clear()
+        register_event(
+            {
+                "type": "orders.created.v1",
+                "payload_schema": {
+                    "type": "object",
+                    "properties": {"id": {"type": "string"}},
+                    "required": ["id"],
+                },
+            }
+        )
+        register_event(
+            {
+                "type": "orders.created.v3",
+                "payload_schema": {
+                    "type": "object",
+                    "properties": {"id": {"type": "string"}},
+                    "required": ["id"],
+                },
+            }
+        )
+
+        stream = io.StringIO()
+        call_command("webhooks_validate_contracts", stdout=stream)
+        output = stream.getvalue()
+        self.assertIn("Compatibility warnings", output)
+        self.assertIn("missing intermediate versions", output)
+
+    def test_webhooks_validate_contracts_warns_on_removed_required_fields(self):
+        _registry.clear()
+        register_event(
+            {
+                "type": "orders.updated.v1",
+                "payload_schema": {
+                    "type": "object",
+                    "properties": {
+                        "id": {"type": "string"},
+                        "status": {"type": "string"},
+                    },
+                    "required": ["id", "status"],
+                },
+            }
+        )
+        register_event(
+            {
+                "type": "orders.updated.v2",
+                "payload_schema": {
+                    "type": "object",
+                    "properties": {"id": {"type": "string"}},
+                    "required": ["id"],
+                },
+            }
+        )
+
+        stream = io.StringIO()
+        call_command("webhooks_validate_contracts", stdout=stream)
+        output = stream.getvalue()
+        self.assertIn("Compatibility warnings", output)
+        self.assertIn("possible compatibility break", output)
 
     def test_webhooks_replay_updates_deadletter_traceability(self):
         endpoint = WebhookEndpoint.objects.create(
@@ -892,6 +989,64 @@ class BootstrapAndOpsCommandsTest(TestCase):
         self.assertIsNone(dead.replayed_at)
         self.assertIsNone(dead.replay_reason)
         self.assertIsNone(dead.replay_event_id)
+
+    def test_webhooks_replay_blocks_when_event_id_already_exists_in_outbox(self):
+        endpoint = WebhookEndpoint.objects.create(
+            name="replay-endpoint-existing-id",
+            url="https://example.com/replay-existing-id",
+            secret="whsec_replay_existing",
+            is_active=True,
+        )
+        event_id = str(uuid.uuid4())
+        payload = {
+            "id": event_id,
+            "type": "orders.created.v1",
+            "data": {"id": "o-3"},
+        }
+        dead = DeadLetter.objects.create(payload=payload, reason="handler boom", retries=1)
+        OutgoingEvent.objects.create(
+            endpoint=endpoint,
+            payload=payload,
+            status="failed",
+            attempts=4,
+        )
+
+        with self.assertRaises(Exception):
+            call_command(
+                "webhooks_replay",
+                dead_letter_id=dead.id,
+                endpoint_id=str(endpoint.id),
+                reason="retry with conflicting id",
+            )
+
+    def test_webhooks_replay_blocks_previously_replayed_deadletter(self):
+        endpoint = WebhookEndpoint.objects.create(
+            name="replay-endpoint-guard",
+            url="https://example.com/replay-guard",
+            secret="whsec_replay_guard",
+            is_active=True,
+        )
+        payload = {
+            "id": str(uuid.uuid4()),
+            "type": "orders.created.v1",
+            "data": {"id": "o-4"},
+        }
+        dead = DeadLetter.objects.create(payload=payload, reason="boom", retries=1)
+        call_command(
+            "webhooks_replay",
+            dead_letter_id=dead.id,
+            endpoint_id=str(endpoint.id),
+            reason="first replay",
+            new_event_id=True,
+        )
+
+        with self.assertRaises(Exception):
+            call_command(
+                "webhooks_replay",
+                dead_letter_id=dead.id,
+                endpoint_id=str(endpoint.id),
+                reason="second replay blocked",
+            )
 
     def test_webhooks_list_failures_runs(self):
         endpoint = WebhookEndpoint.objects.create(

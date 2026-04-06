@@ -18,6 +18,11 @@ class Command(BaseCommand):
         parser.add_argument("--endpoint-id", required=True, help="WebhookEndpoint UUID")
         parser.add_argument("--reason", required=True, help="Why replay is needed (for audit traceability)")
         parser.add_argument("--new-event-id", action="store_true", help="Generate a new event id for replay")
+        parser.add_argument(
+            "--allow-previously-replayed",
+            action="store_true",
+            help="Allow replaying a DeadLetter that already has replay traceability metadata.",
+        )
         parser.add_argument("--dry-run", action="store_true")
 
     def handle(self, *args, **options):
@@ -25,6 +30,7 @@ class Command(BaseCommand):
         endpoint_id = options["endpoint_id"]
         reason = options["reason"].strip()
         dry_run = options["dry_run"]
+        allow_previously_replayed = options["allow_previously_replayed"]
 
         if not reason:
             raise CommandError("--reason is required for replay traceability.")
@@ -33,6 +39,12 @@ class Command(BaseCommand):
             dead_letter = DeadLetter.objects.get(id=dead_letter_id)
         except DeadLetter.DoesNotExist as exc:
             raise CommandError(f"DeadLetter {dead_letter_id} not found.") from exc
+
+        if dead_letter.replayed_at and not allow_previously_replayed:
+            raise CommandError(
+                "Replay blocked: this DeadLetter was already replayed. "
+                "Use --allow-previously-replayed only if duplicate downstream effects are understood."
+            )
 
         try:
             endpoint = WebhookEndpoint.objects.get(id=endpoint_id)
@@ -60,7 +72,6 @@ class Command(BaseCommand):
         duplicate_outbox = OutgoingEvent.objects.filter(
             endpoint=endpoint,
             payload__id=replay_id,
-            status__in=["pending", "delivered"],
         ).exists()
         if duplicate_outbox:
             raise CommandError(
