@@ -1,6 +1,6 @@
 # Auditing Guide (Lean)
 
-Guia practica para auditar intercambios SaaS <-> Socios sin aumentar demasiado costo, tiempo ni carga operativa.
+Guia practica para auditar intercambios entre Sistema A <-> Sistema B sin aumentar demasiado costo, tiempo ni carga operativa.
 
 ## 1. Objetivo
 
@@ -32,8 +32,8 @@ Plantilla reutilizable en el repo:
   "correlation_id": "cor_01JY2M1Q0Q4B7K8S6F1P9R3T5V",
   "request_id": "req_01JY2M1QCM5ZD54X3A2Y8NFV8E",
   "operation": "benefit_redeem_attempt",
-  "actor_system": "saas",
-  "subject_type": "socios_profile",
+  "actor_system": "upstream_system",
+  "subject_type": "profile",
   "subject_id": "sp_01JY2M17N8K5Q3P7Y2R1T9V6W",
   "status": "approved",
   "code": "OK",
@@ -67,21 +67,21 @@ Campos opcionales de bajo costo:
 
 ### 4.1 IDs recomendados
 
-- `saas_customer_id`: id canonico del cliente en SaaS.
-- `socios_profile_id`: id canonico del perfil en Socios (UUID o ULID opaco).
+- `external_customer_id`: id canonico del cliente en Sistema A.
+- `profile_id`: id canonico del perfil en Sistema B (UUID o ULID opaco).
 - `correlation_id`: id transversal de la transaccion (viaja en REST, webhook y logs).
 - `request_id`: id unico por intento de comando (idempotencia).
 - `event_id`: id unico por evento webhook.
 
 ### 4.2 Tabla de mapeo minima
 
-Socios puede mantener:
+Sistema B puede mantener:
 
-- `(tenant_id, saas_customer_id) -> socios_profile_id`
+- `(tenant_id, external_customer_id) -> profile_id`
 
-SaaS puede mantener:
+Sistema A puede mantener:
 
-- `(tenant_id, socios_profile_id) -> saas_customer_id`
+- `(tenant_id, profile_id) -> external_customer_id`
 
 Esto reduce ambiguedades en soporte y evita buscar por email o datos sensibles.
 
@@ -89,12 +89,12 @@ Esto reduce ambiguedades en soporte y evita buscar por email o datos sensibles.
 
 Escenario:
 
-1. SaaS crea cliente.
-2. SaaS llama REST de Socios para provisionar perfil.
-3. Socios responde con `socios_profile_id`.
-4. (Opcional recomendado) Socios emite webhook `socios.profile.provisioned.v1`.
+1. Sistema A crea cliente.
+2. Sistema A llama REST de Sistema B para provisionar perfil.
+3. Sistema B responde con `profile_id`.
+4. (Opcional recomendado) Sistema B emite webhook `profile.provisioned.v1`.
 
-### 5.1 Comando REST (SaaS -> Socios)
+### 5.1 Comando REST (Sistema A -> Sistema B)
 
 Request:
 
@@ -103,7 +103,7 @@ Request:
   "request_id": "req_01JY2P5EJ0R9B1D7Q8W4K6M2T3",
   "correlation_id": "cor_01JY2P5E4G5A8F2D9N1R3M7V0Q",
   "tenant_id": "t_abc",
-  "saas_customer_id": "cus_12345",
+  "external_customer_id": "cus_12345",
   "email": "user@example.com"
 }
 ```
@@ -113,37 +113,37 @@ Response:
 ```json
 {
   "status": "created",
-  "socios_profile_id": "sp_01JY2P6A2X9W8N5M4Q7R1T3V6K",
+  "profile_id": "pf_01JY2P6A2X9W8N5M4Q7R1T3V6K",
   "tenant_id": "t_abc",
-  "saas_customer_id": "cus_12345"
+  "external_customer_id": "cus_12345"
 }
 ```
 
-Registro de auditoria minimo en SaaS:
+Registro de auditoria minimo en Sistema A:
 
 ```json
 {
-  "operation": "socios_profile_provision",
+  "operation": "profile_provision",
   "request_id": "req_01JY2P5EJ0R9B1D7Q8W4K6M2T3",
   "correlation_id": "cor_01JY2P5E4G5A8F2D9N1R3M7V0Q",
   "status": "approved",
   "code": "PROFILE_CREATED",
-  "subject_id": "sp_01JY2P6A2X9W8N5M4Q7R1T3V6K"
+  "subject_id": "pf_01JY2P6A2X9W8N5M4Q7R1T3V6K"
 }
 ```
 
-### 5.2 Evento webhook opcional (Socios -> SaaS)
+### 5.2 Evento webhook opcional (Sistema B -> Sistema A)
 
 Usalo cuando quieras robustez de reconciliacion y trazabilidad historica.
 
 ```json
 {
   "id": "evt_01JY2P8V0H6B9C2N4Q5R7T1M3K",
-  "type": "socios.profile.provisioned.v1",
+  "type": "profile.provisioned.v1",
   "data": {
     "tenant_id": "t_abc",
-    "saas_customer_id": "cus_12345",
-    "socios_profile_id": "sp_01JY2P6A2X9W8N5M4Q7R1T3V6K"
+    "external_customer_id": "cus_12345",
+    "profile_id": "pf_01JY2P6A2X9W8N5M4Q7R1T3V6K"
   },
   "meta": {
     "correlation_id": "cor_01JY2P5E4G5A8F2D9N1R3M7V0Q"
@@ -155,9 +155,9 @@ Usalo cuando quieras robustez de reconciliacion y trazabilidad historica.
 
 Escenario:
 
-1. Usuario en Socios elige usar beneficio.
-2. Socios solicita autorizacion a SaaS.
-3. SaaS responde para que Socios cierre UX al instante.
+1. Usuario en Sistema B elige usar beneficio.
+2. Sistema B solicita autorizacion a Sistema A.
+3. Sistema A responde para que Sistema B cierre UX al instante.
 
 ### 6.1 Endpoint de comando
 
@@ -170,7 +170,7 @@ Request:
   "request_id": "req_01JY2R5AX6V1D7N9M4Q8T2K3P0",
   "correlation_id": "cor_01JY2R5A7E3F1H9K6N2Q4T8M0V",
   "tenant_id": "t_abc",
-  "socios_profile_id": "sp_01JY2P6A2X9W8N5M4Q7R1T3V6K",
+  "profile_id": "pf_01JY2P6A2X9W8N5M4Q7R1T3V6K",
   "benefit_id": "ben_789",
   "occurred_at": "2026-04-04T19:00:10Z"
 }

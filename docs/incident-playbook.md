@@ -1,6 +1,6 @@
 # Incident Playbook (Lean)
 
-Playbook operativo corto para incidentes entre SaaS <-> Socios.
+Playbook operativo corto para incidentes entre Sistema A <-> Sistema B.
 
 Objetivo: resolver en 10-15 minutos el 80% de incidentes sin escalar complejidad.
 

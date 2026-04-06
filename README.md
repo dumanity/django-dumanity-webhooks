@@ -183,10 +183,10 @@ Comportamiento:
 Scaffold rapido de dominio webhook:
 
 ```bash
-python manage.py start_webhook_domain socios
+python manage.py start_webhook_domain orders
 ```
 
-Si hay colision de nombre (por ejemplo ya existe una app `socios`), el comando resuelve automaticamente usando sufijos (`socios_events_2`, etc.).
+Si hay colision de nombre (por ejemplo ya existe una app `orders`), el comando resuelve automaticamente usando sufijos (`orders_events_2`, etc.).
 
 ## Starter Kit Para Agentes IA (Copy/Paste)
 
@@ -263,12 +263,12 @@ jobs:
 ### 4) Scaffold rapido por dominio
 
 ```bash
-python manage.py start_webhook_domain socios
-python manage.py start_webhook_domain comercios --output-dir ./domains
-python manage.py start_webhook_domain socios --dry-run
+python manage.py start_webhook_domain orders
+python manage.py start_webhook_domain billing --output-dir ./domains
+python manage.py start_webhook_domain orders --dry-run
 ```
 
-Con esto, incluso si ya existe una app `socios`, el scaffold evita colision con sufijos (`socios_events_2`, `socios_events_3`, ...).
+Con esto, incluso si ya existe una app `orders`, el scaffold evita colision con sufijos (`orders_events_2`, `orders_events_3`, ...).
 
 Referencia tecnica ampliada en:
 
