@@ -2,6 +2,13 @@
 
 Framework Django para webhooks seguros, desacoplados y listos para produccion.
 
+> **⚠️ Política de ejemplos seguros**
+> Todos los secretos, tokens y credenciales que aparecen en esta documentación,
+> tests y ejemplos son **ficticios** (p. ej. `whsec_example_123`,
+> `example-test-secret-key`).  Nunca uses credenciales reales en docs, tests
+> ni capturas de pantalla.  Si un secreto real fue expuesto accidentalmente,
+> **rótalo de inmediato**.
+
 ## Objetivo
 
 Resolver de forma reusable el envio y recepcion de webhooks entre aplicaciones sin dispersar logica de seguridad, validacion y resiliencia.
@@ -116,8 +123,8 @@ Prueba de conexión opcional antes de habilitar tráfico:
 ```bash
 webhooks-info test-endpoint \
   --url https://receiver.example.com/webhooks/ \
-  --secret whsec_prod_123 \
-  --api-key <receiver_api_key> \
+  --secret whsec_example_123 \
+  --api-key <your_receiver_api_key> \
   --timeout 5
 ```
 
@@ -137,6 +144,32 @@ webhooks-info test-endpoint \
 - Cambios incrementales
 - Sin dependencias innecesarias
 - Sin complejidad operativa evitable
+- Headers sensibles (`Authorization`, `Webhook-Signature`, `X-Api-Key`, `Cookie`, `Set-Cookie`) se redactan automáticamente antes de persistir en `AuditLog`.
+
+## Endpoint /metrics
+
+El endpoint de métricas está **deshabilitado por defecto**.  Actívalo explícitamente solo en entornos donde la exposición sea aceptable:
+
+```python
+# settings.py
+WEBHOOK_METRICS_ENABLED = True           # False por defecto (seguro)
+WEBHOOK_METRICS_TOKEN   = "your-secret-token"  # Recomendado en producción
+```
+
+Variables de entorno equivalentes (con `django-environ` o similar):
+
+```
+WEBHOOK_METRICS_ENABLED=true
+WEBHOOK_METRICS_TOKEN=your-secret-token
+```
+
+Comportamiento:
+
+| `WEBHOOK_METRICS_ENABLED` | `WEBHOOK_METRICS_TOKEN` | Resultado |
+|---------------------------|-------------------------|-----------|
+| `False` (por defecto)     | cualquiera              | 404 — endpoint no expuesto |
+| `True`                    | no configurado          | 200 — acceso libre (menos seguro) |
+| `True`                    | configurado             | 200 solo con `Authorization: Bearer <token>`; 403 si no |
 
 ## Operacion
 

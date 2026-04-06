@@ -6,6 +6,7 @@ from django.db.models import Q
 from django.utils.timezone import now
 
 from webhooks.core.metrics import inc
+from webhooks.core.security import redact_headers
 from webhooks.core.verification import verify
 from webhooks.core.registry import get_event
 from webhooks.core.handlers import get_handler
@@ -97,7 +98,7 @@ class WebhookService:
             integration=integration.name if integration else "unknown",
             correlation_id=trace_context["correlation_id"],
             request_id=trace_context["request_id"],
-            request_headers=dict(headers),
+            request_headers=redact_headers(dict(headers)),
         )
 
         if not verify(secrets, sig, body):

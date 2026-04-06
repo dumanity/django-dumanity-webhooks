@@ -2,6 +2,7 @@ from rest_framework.views import APIView
 from rest_framework.response import Response
 from rest_framework_api_key.permissions import HasAPIKey
 from rest_framework_api_key.models import APIKey
+from django.conf import settings
 from django.http import HttpResponse
 
 from webhooks.core.metrics import inc, export_prometheus_text
@@ -94,12 +95,47 @@ class WebhookView(APIView):
 
 
 class MetricsView(APIView):
-    """Endpoint de métricas en formato texto Prometheus."""
+    """
+    Endpoint de métricas en formato texto Prometheus.
+
+    Controlado por las siguientes variables de configuración en settings.py
+    (o sus equivalentes de entorno):
+
+    - ``WEBHOOK_METRICS_ENABLED`` (bool, default ``False``):
+      Si es ``False`` (valor seguro por defecto), el endpoint devuelve 404.
+      Establece ``True`` solo en entornos donde la exposición de métricas
+      sea aceptable (p. ej. red privada, staging, desarrollo).
+
+    - ``WEBHOOK_METRICS_TOKEN`` (str, default ``None``):
+      Si está configurado, el endpoint exige el header
+      ``Authorization: Bearer <token>``; en caso contrario devuelve 403.
+      Si no se configura, el acceso es libre (modo menos seguro; documéntalo).
+
+    Ejemplos de configuración::
+
+        # settings.py
+        WEBHOOK_METRICS_ENABLED = True           # requerido para activar
+        WEBHOOK_METRICS_TOKEN = "my-secret-tok"  # recomendado en producción
+
+        # equivalente por variables de entorno (con django-environ u os.environ):
+        # WEBHOOK_METRICS_ENABLED=true
+        # WEBHOOK_METRICS_TOKEN=my-secret-tok
+    """
 
     authentication_classes: list = []
     permission_classes: list = []
 
     def get(self, request):
+        enabled = getattr(settings, "WEBHOOK_METRICS_ENABLED", False)
+        if not enabled:
+            return HttpResponse(status=404)
+
+        token = getattr(settings, "WEBHOOK_METRICS_TOKEN", None)
+        if token:
+            auth_header = request.headers.get("Authorization", "")
+            if auth_header != f"Bearer {token}":
+                return HttpResponse(status=403)
+
         return HttpResponse(
             export_prometheus_text(),
             content_type="text/plain; version=0.0.4; charset=utf-8",

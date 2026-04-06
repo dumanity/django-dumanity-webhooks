@@ -25,7 +25,7 @@ class WebhookEndpoint(models.Model):
         >>> endpoint = WebhookEndpoint.objects.create(
         ...     name="app-b",
         ...     url="https://app-b.example.com/webhooks/",
-        ...     secret="whsec_prod_123",
+        ...     secret="whsec_example_123",
         ...     is_active=True
         ... )
     """

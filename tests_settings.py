@@ -1,6 +1,6 @@
 """Minimal Django settings for local test execution."""
 
-SECRET_KEY = "test-secret-key"
+SECRET_KEY = "example-test-secret-key"
 DEBUG = True
 USE_TZ = True
 

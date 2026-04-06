@@ -84,7 +84,7 @@ if not settings.configured:
             'webhooks.producer',
             'webhooks.receiver',
         ],
-        SECRET_KEY='test-secret-key',
+        SECRET_KEY='example-test-secret-key',
     )
     django.setup()
 
