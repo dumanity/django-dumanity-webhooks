@@ -2,6 +2,41 @@
 
 All notable changes to this project will be documented in this file.
 
+## [1.0.1] – doc-code alignment
+
+### Documentation
+
+- **Version tags updated** – All installation examples in `README.md`,
+  `docs/users-guide.md`, `docs/developers-guide.md`, and `docs/release.md`
+  updated from `@v0.3.0` to `@v1.0.0` to match the current stable release.
+
+- **`docs/release.md` overhauled** – Added v1.0.0 changelog section; removed
+  outdated `0.1.x` version placeholder from pre-release checklist; kept v0.3.0
+  history for reference.
+
+- **`docs/developers-guide.md` – internal version references removed** –
+  "Garantías implementadas (v3.1+)" and roadmap items "hecho en v3.1" now
+  reference the public semver `v1.0.0`.
+
+- **`TESTING.md` rewritten** – Corrected test runner from `python manage.py test`
+  to `python -m pytest tests.py`; updated version label; added all 12 test
+  classes (including `HeaderRedactionTest`, `MetricsSecurityTest`,
+  `ProducerAdminActionTest`, `ProducerOutboxTransactionalTest`,
+  `MetricsExportTest`, `E2EExampleAppsTest`, `DomainScaffoldCommandTest`);
+  updated CI/CD YAML example.
+
+- **`README.md` – Flujo Receiver step order corrected** – `AuditLog` is now
+  listed at step 3 (before signature verification), matching the actual
+  execution order in `WebhookService.process()`.
+
+### Code (docstrings)
+
+- **`WebhookService.process()` return value documented** – Added `"connection_ok"`
+  as a valid return string for `webhook.connection_test.v1` events.
+
+- **`WebhookView.post()` response codes updated** – Added `connection_ok` to
+  the documented 200 response statuses.
+
 ## [1.0.0] – 2026-04-06
 
 ### Security

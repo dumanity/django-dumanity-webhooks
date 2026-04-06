@@ -2,6 +2,26 @@
 
 Guia operativa para distribuir `django-dumanity-webhooks` de forma privada primero.
 
+## Changelog v1.0.0 (Stable — seguridad endurecida)
+
+### Security
+- Redacción automática de headers sensibles (`Authorization`, `Webhook-Signature`,
+  `X-Api-Key`, `Cookie`, `Set-Cookie`) antes de persistir en `AuditLog`.
+- Endpoint `/metrics` deshabilitado por defecto (`WEBHOOK_METRICS_ENABLED = False`).
+  Soporte de token Bearer opcional (`WEBHOOK_METRICS_TOKEN`).
+- Reemplazo de todos los placeholders de secretos por valores claramente ficticios.
+- Adición de CodeQL SAST y Dependabot en CI.
+
+### Changed
+- `webhooks.receiver.api.MetricsView` ahora verifica `WEBHOOK_METRICS_ENABLED` y
+  `WEBHOOK_METRICS_TOKEN` antes de exponer datos. **Breaking** para despliegues que
+  dependían del endpoint abierto: activar con `WEBHOOK_METRICS_ENABLED = True`.
+
+### Added
+- Módulo `webhooks.core.security` con función `redact_headers()`.
+- 11 tests de seguridad nuevos en `tests.py` (redacción de headers y control de acceso
+  al endpoint de métricas).
+
 ## Changelog v0.3.0 (Initial Stable Lean Release)
 
 ### New Features
@@ -20,7 +40,7 @@ Guia operativa para distribuir `django-dumanity-webhooks` de forma privada prime
 - `tests.py`: suite completa con tests de fail-closed, idempotencia scoped, rate limit per-integration, y multi-app integration.
 
 ### Documentation Updated
-- `docs/developers-guide.md`: detalles de garantías v3.1, testing recomendado, roadmap.
+- `docs/developers-guide.md`: detalles de garantías, testing recomendado, roadmap.
 - `docs/users-guide.md`: referencia multi-app, configuración de múltiples integraciones.
 - `README.md`: actualizado con características de seguridad multi-app.
 - Docstrings: documentación exhaustiva de todas las clases y funciones principales.
@@ -28,7 +48,7 @@ Guia operativa para distribuir `django-dumanity-webhooks` de forma privada prime
 ## 1. Pre-release checklist
 
 - Tests y validaciones en verde.
-- Version en `pyproject.toml` actualizada a 0.1.x.
+- Version en `pyproject.toml` actualizada al número de release.
 - `README.md`, `developers-guide.md`, `users-guide.md` sincronizadas.
 - Migraciones generadas y validadas con Django.
 
@@ -50,10 +70,10 @@ cp -R dist/ /ruta/interna/artefactos/
 
 ## 3.1 Consumo desde proyectos con uv
 
-Agregar dependencia privada por tag:
+Agregar dependencia privada por tag (usar la versión estable actual):
 
 ```bash
-uv add "django-dumanity-webhooks @ git+https://github.com/dumanity/django-dumanity-webhooks.git@v0.3.0"
+uv add "django-dumanity-webhooks @ git+https://github.com/dumanity/django-dumanity-webhooks.git@v1.0.0"
 ```
 
 o declararla en `pyproject.toml` del consumidor:
@@ -61,7 +81,7 @@ o declararla en `pyproject.toml` del consumidor:
 ```toml
 [project]
 dependencies = [
-	"django-dumanity-webhooks @ git+https://github.com/dumanity/django-dumanity-webhooks.git@v0.3.0",
+	"django-dumanity-webhooks @ git+https://github.com/dumanity/django-dumanity-webhooks.git@v1.0.0",
 ]
 ```
 
@@ -82,7 +102,7 @@ SemVer:
 - MINOR: nuevas capacidades compatibles.
 - PATCH: fixes sin cambios de API.
 
-Ejemplo:
+Ejemplo de historial:
 - 0.1.x → 0.1.1 (hotfix)
 - 0.1.x → 0.3.0 (nuevas features compatibles)
 - 0.x → 1.0.0 (API/operación estable de largo plazo)
@@ -93,4 +113,3 @@ Ejemplo:
 - Validar quickstart del README.
 - Ejecutar tests con nuevos datos (migraciones).
 - Crear issue con feedback de integracion temprana.
-

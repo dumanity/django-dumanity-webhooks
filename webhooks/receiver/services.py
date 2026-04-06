@@ -63,7 +63,9 @@ class WebhookService:
                          Si None, lanza excepción (fallo cerrado).
         
         Returns:
-            str: "ok" si procesado exitosamente, "duplicate" si es reintento.
+            str: "ok" si procesado exitosamente, "duplicate" si es reintento,
+                 "connection_ok" si es un evento de prueba de conexión
+                 (`webhook.connection_test.v1`).
         
         Raises:
             Exception: con mensajes de error specificos para cada validación fallida.

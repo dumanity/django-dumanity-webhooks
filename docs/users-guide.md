@@ -15,7 +15,7 @@ Permite emitir y recibir webhooks en Django con un stack de seguridad por diseñ
 ## 3. Instalacion
 
 ```bash
-uv add "django-dumanity-webhooks @ git+https://github.com/dumanity/django-dumanity-webhooks.git@v0.3.0"
+uv add "django-dumanity-webhooks @ git+https://github.com/dumanity/django-dumanity-webhooks.git@v1.0.0"
 ```
 
 Alternativa declarativa en `pyproject.toml`:
@@ -23,7 +23,7 @@ Alternativa declarativa en `pyproject.toml`:
 ```toml
 [project]
 dependencies = [
-    "django-dumanity-webhooks @ git+https://github.com/dumanity/django-dumanity-webhooks.git@v0.3.0",
+    "django-dumanity-webhooks @ git+https://github.com/dumanity/django-dumanity-webhooks.git@v1.0.0",
 ]
 ```
 
@@ -151,7 +151,7 @@ Objetivo: que **Proyecto A** y **Proyecto B** se envíen eventos en ambos sentid
 En A y en B:
 
 ```bash
-uv add "django-dumanity-webhooks @ git+https://github.com/dumanity/django-dumanity-webhooks.git@v0.3.0"
+uv add "django-dumanity-webhooks @ git+https://github.com/dumanity/django-dumanity-webhooks.git@v1.0.0"
 ```
 
 ```python
@@ -425,7 +425,7 @@ Si tu proyecto consumidor usa Docker Compose o Coolify y este paquete se instala
 ### Reglas clave
 
 - Instala dependencias privadas en build-time, no en runtime.
-- Usa tag fijo (`@v0.3.0`) para builds reproducibles.
+- Usa tag fijo (`@v1.0.0`) para builds reproducibles.
 - No guardes tokens en `Dockerfile` o en variables que terminen dentro de la imagen.
 
 ### Dockerfile recomendado (BuildKit + SSH)
