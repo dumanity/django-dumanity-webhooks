@@ -765,9 +765,9 @@ class DomainScaffoldCommandTest(TestCase):
 
     def test_start_webhook_domain_creates_expected_files(self):
         with tempfile.TemporaryDirectory() as tmp_dir:
-            call_command("start_webhook_domain", "socios", output_dir=tmp_dir)
+            call_command("start_webhook_domain", "orders", output_dir=tmp_dir)
 
-            package_dir = Path(tmp_dir) / "socios_events"
+            package_dir = Path(tmp_dir) / "orders_events"
             self.assertTrue(package_dir.exists())
             self.assertTrue((package_dir / "__init__.py").exists())
             self.assertTrue((package_dir / "apps.py").exists())
@@ -779,13 +779,13 @@ class DomainScaffoldCommandTest(TestCase):
 
     def test_start_webhook_domain_resolves_name_collision(self):
         with tempfile.TemporaryDirectory() as tmp_dir:
-            existing = Path(tmp_dir) / "socios_events"
+            existing = Path(tmp_dir) / "orders_events"
             existing.mkdir(parents=True, exist_ok=True)
 
-            call_command("start_webhook_domain", "socios", output_dir=tmp_dir)
+            call_command("start_webhook_domain", "orders", output_dir=tmp_dir)
 
-            self.assertTrue((Path(tmp_dir) / "socios_events").exists())
-            self.assertTrue((Path(tmp_dir) / "socios_events_2").exists())
+            self.assertTrue((Path(tmp_dir) / "orders_events").exists())
+            self.assertTrue((Path(tmp_dir) / "orders_events_2").exists())
 
 
 # ---------------------------------------------------------------------------

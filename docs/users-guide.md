@@ -142,6 +142,144 @@ Secret.objects.create(
 )
 ```
 
+### 5.1 Ejemplo completo: dos proyectos Django (A ↔ B), ambos receiver + producer
+
+Objetivo: que **Proyecto A** y **Proyecto B** se envíen eventos en ambos sentidos usando el mismo framework.
+
+#### Paso 1: instalar en ambos proyectos
+
+En A y en B:
+
+```bash
+uv add "django-dumanity-webhooks @ git+https://github.com/dumanity/django-dumanity-webhooks.git@v0.3.0"
+```
+
+```python
+INSTALLED_APPS += [
+    "webhooks.core",
+    "webhooks.producer",
+    "webhooks.receiver",
+]
+```
+
+```bash
+python manage.py makemigrations
+python manage.py migrate
+```
+
+#### Paso 2: exponer endpoint receiver en ambos
+
+En `urls.py` de A y de B:
+
+```python
+from django.urls import path
+from webhooks.receiver.api import WebhookView
+
+urlpatterns = [
+    path("webhooks/", WebhookView.as_view()),
+]
+```
+
+#### Paso 3: crear credenciales cruzadas (A acepta a B, B acepta a A)
+
+En **Proyecto A** (para aceptar eventos enviados por B):
+
+```python
+from datetime import timedelta
+from django.utils.timezone import now
+from rest_framework_api_key.models import APIKey
+from webhooks.receiver.models import Integration, Secret
+
+api_key_b_to_a, plaintext_b_to_a = APIKey.objects.create_key(name="project-b")
+integration_b_to_a = Integration.objects.create(name="project-b", api_key=api_key_b_to_a)
+Secret.objects.create(
+    integration=integration_b_to_a,
+    secret="whsec_b_to_a_example",
+    is_active=True,
+    expires_at=now() + timedelta(days=30),
+)
+```
+
+En **Proyecto B** (para aceptar eventos enviados por A):
+
+```python
+from datetime import timedelta
+from django.utils.timezone import now
+from rest_framework_api_key.models import APIKey
+from webhooks.receiver.models import Integration, Secret
+
+api_key_a_to_b, plaintext_a_to_b = APIKey.objects.create_key(name="project-a")
+integration_a_to_b = Integration.objects.create(name="project-a", api_key=api_key_a_to_b)
+Secret.objects.create(
+    integration=integration_a_to_b,
+    secret="whsec_a_to_b_example",
+    is_active=True,
+    expires_at=now() + timedelta(days=30),
+)
+```
+
+> Guarda `plaintext_b_to_a` y `plaintext_a_to_b`: se usan como API key de autorización en el sentido contrario.
+
+#### Paso 4: crear endpoints producer cruzados
+
+En **Proyecto A** (A envía a B):
+
+```python
+from webhooks.producer.models import WebhookEndpoint
+
+endpoint_a_to_b = WebhookEndpoint.objects.create(
+    name="project-b",
+    url="https://project-b.example.com/webhooks/",
+    secret="whsec_a_to_b_example",
+    is_active=True,
+)
+```
+
+En **Proyecto B** (B envía a A):
+
+```python
+from webhooks.producer.models import WebhookEndpoint
+
+endpoint_b_to_a = WebhookEndpoint.objects.create(
+    name="project-a",
+    url="https://project-a.example.com/webhooks/",
+    secret="whsec_b_to_a_example",
+    is_active=True,
+)
+```
+
+#### Paso 5: publicar eventos en ambos sentidos
+
+En A (hacia B):
+
+```python
+from webhooks.producer.services import publish_event
+
+publish_event(endpoint_a_to_b, {
+    "id": "11111111-1111-4111-8111-111111111111",
+    "type": "order.created.v1",
+    "data": {"order_id": "A-1001"},
+})
+```
+
+En B (hacia A):
+
+```python
+from webhooks.producer.services import publish_event
+
+publish_event(endpoint_b_to_a, {
+    "id": "22222222-2222-4222-8222-222222222222",
+    "type": "payment.confirmed.v1",
+    "data": {"payment_id": "B-9001"},
+})
+```
+
+#### Paso 6: operación mínima en ambos
+
+- Ejecutar worker en A: `python manage.py runworker`
+- Ejecutar worker en B: `python manage.py runworker`
+- Verificar logs/estado de `OutgoingEvent`, `EventLog` y `DeadLetter` en ambos proyectos.
+
 ## 6. Firma y headers
 
 - Header de firma: `Webhook-Signature`
@@ -169,7 +307,52 @@ Notas de métricas (modo lean):
 3. Cambiar producer al nuevo secreto.
 4. Expirar/desactivar secreto anterior.
 
-## 9. Problemas frecuentes
+## 9. Eventos por dominio (recomendado)
+
+Cuando un equipo necesita eventos propios por dominio, la forma más mantenible es crear una app `<dominio>_events` y separar responsabilidades por archivo:
+
+- `events.py`: define tipos de evento versionados (`*.v1`, `*.v2`).
+- `registry.py`: registra contratos/schemas de esos tipos.
+- `handlers.py`: implementa lógica de consumo post-validación.
+- `signals.py`: emisión opcional desde señales de dominio (si aporta valor).
+- `apps.py`: bootstrap central en `AppConfig.ready()`.
+
+Punto de partida rápido:
+
+```bash
+python manage.py start_webhook_domain orders
+```
+
+Flujo recomendado de implementación:
+
+1. Definir el evento versionado en `events.py`.
+2. Registrar su contrato en `registry.py`.
+3. Registrar el handler en `handlers.py`.
+4. Cargar registros en `apps.py` dentro de `ready()`.
+5. Usar `signals.py` solo cuando necesites emitir desde eventos internos de Django.
+
+Responsabilidades esperadas:
+
+- **Negocio**: en la app de dominio (no en `core` del framework).
+- **Contrato**: en `events.py` + `registry.py`.
+- **Ejecución**: en `handlers.py` una vez validado firma/schema/idempotencia.
+- **Signals**: mecanismo opcional de emisión; no reemplaza contrato ni versionado.
+
+Versionado y compatibilidad:
+
+- No rompas `v1` cambiando payload de forma incompatible.
+- Crea `v2` para cambios rompientes.
+- Mantén convivencia temporal (`v1` + `v2`) hasta migrar consumidores.
+
+Checklist operativo corto para integradores:
+
+- [ ] Crear/actualizar `events.py`, `registry.py`, `handlers.py`, `apps.py` (y `signals.py` si aplica).
+- [ ] Verificar que los contratos de evento estén registrados.
+- [ ] Verificar que los handlers estén registrados y sean idempotentes.
+- [ ] Confirmar que cambios rompientes salgan en nueva versión (`v2`).
+- [ ] Probar flujo completo antes de producción (firma, schema, dispatch, deduplicación).
+
+## 10. Problemas frecuentes
 
 - `Invalid signature`: secreto incorrecto, expirado o replay fuera de tolerancia.
 - `duplicate`: mismo `X-Event-ID` ya procesado.
@@ -177,13 +360,13 @@ Notas de métricas (modo lean):
 - `failed` en outbox: endpoint caido o respuestas no-2xx.
 - Timeouts frecuentes: subir `request_timeout_seconds` o reducir carga en el receiver.
 
-## 9.1 Regla de oro operativa
+## 10.1 Regla de oro operativa
 
 - Nunca permitas que dos apps sean source-of-truth de la misma entidad.
 - Webhook = "informo estado".
 - REST = "solicito acción".
 
-## 9.2 Auditoria liviana del intercambio (recomendado)
+## 10.2 Auditoria liviana del intercambio (recomendado)
 
 Para operar con bajo costo y baja carga mental, usa la guia dedicada:
 
@@ -202,7 +385,7 @@ Recursos listos para usar:
 - `docs/examples/audit-record-template.json`
 - `docs/incident-playbook.md`
 
-## 10. Producción (modo lean + Sentry Free)
+## 11. Producción (modo lean + Sentry Free)
 
 Stack mínimo recomendado:
 
@@ -235,7 +418,7 @@ Regla práctica de operación:
 
 - Si `DeadLetter` o `OutgoingEvent.failed` crece más de lo normal por 15 min, abrir incidente y pausar nuevas integraciones hasta estabilizar.
 
-## 11. Docker Compose / Coolify con repositorio privado
+## 12. Docker Compose / Coolify con repositorio privado
 
 Si tu proyecto consumidor usa Docker Compose o Coolify y este paquete se instala desde GitHub privado, considera lo siguiente:
 

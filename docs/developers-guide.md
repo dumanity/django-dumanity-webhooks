@@ -124,7 +124,7 @@ En repos separados, el plugin suele ser un paquete propio fijado por tag. Eso ev
 Para evitar repetir estructura manual al crear dominios nuevos, el paquete incluye:
 
 ```bash
-python manage.py start_webhook_domain socios
+python manage.py start_webhook_domain orders
 ```
 
 Eso crea un paquete scaffold con:
@@ -139,16 +139,16 @@ Eso crea un paquete scaffold con:
 Opciones utiles:
 
 ```bash
-python manage.py start_webhook_domain comercios --output-dir ./domains
-python manage.py start_webhook_domain beneficios --package-name beneficios_events
-python manage.py start_webhook_domain socios --dry-run
+python manage.py start_webhook_domain billing --output-dir ./domains
+python manage.py start_webhook_domain notifications --package-name notifications_events
+python manage.py start_webhook_domain orders --dry-run
 ```
 
 Resolucion de colisiones de nombres:
 
 - Nombre por defecto: `<domain>_events`.
 - Si ese nombre ya existe en el proyecto, en apps instaladas o como modulo importable, el comando usa sufijos incrementales (`_2`, `_3`, ...).
-- Esto evita conflictos cuando ya existe una app Django con el mismo nombre del dominio (ej: `socios`).
+- Esto evita conflictos cuando ya existe una app Django con el mismo nombre del dominio (ej: `orders`).
 
 ### Flujo recomendado con varios repos
 

@@ -153,7 +153,7 @@ class Command(BaseCommand):
     help = "Create a webhook domain scaffold package with collision-safe naming"
 
     def add_arguments(self, parser):
-        parser.add_argument("domain", help="Domain name, e.g. socios, comercios, beneficios")
+        parser.add_argument("domain", help="Domain name, e.g. orders, billing, notifications")
         parser.add_argument(
             "--output-dir",
             default=".",
