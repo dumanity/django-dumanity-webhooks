@@ -61,7 +61,9 @@ class WebhookEndpointAdmin(admin.ModelAdmin):
         endpoint = get_object_or_404(WebhookEndpoint, id=endpoint_id)
         result = probe_connection(endpoint=endpoint)
         self._emit_connection_result_message(request, endpoint, result)
-        changelist_url = reverse("admin:producer_webhookendpoint_changelist")
+        changelist_url = reverse(
+            f"admin:{self.model._meta.app_label}_{self.model._meta.model_name}_changelist"
+        )
         return redirect(changelist_url)
 
     @admin.action(description="Probar conexión al receiver")

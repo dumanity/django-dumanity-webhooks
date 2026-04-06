@@ -408,7 +408,9 @@ class ProducerAdminActionTest(TestCase):
 
         self.assertEqual(response.status_code, 302)
         self.assertIn(
-            reverse("admin:producer_webhookendpoint_changelist"),
+            reverse(
+                f"admin:{WebhookEndpoint._meta.app_label}_{WebhookEndpoint._meta.model_name}_changelist"
+            ),
             response.url,
         )
         mock_message.assert_called_once()
