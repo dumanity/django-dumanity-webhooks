@@ -169,7 +169,52 @@ Notas de métricas (modo lean):
 3. Cambiar producer al nuevo secreto.
 4. Expirar/desactivar secreto anterior.
 
-## 9. Problemas frecuentes
+## 9. Eventos por dominio (recomendado)
+
+Cuando un equipo necesita eventos propios por dominio, la forma más mantenible es crear una app `<dominio>_events` y separar responsabilidades por archivo:
+
+- `events.py`: define tipos de evento versionados (`*.v1`, `*.v2`).
+- `registry.py`: registra contratos/schemas de esos tipos.
+- `handlers.py`: implementa lógica de consumo post-validación.
+- `signals.py`: emisión opcional desde señales de dominio (si aporta valor).
+- `apps.py`: bootstrap central en `AppConfig.ready()`.
+
+Punto de partida rápido:
+
+```bash
+python manage.py start_webhook_domain orders
+```
+
+Flujo recomendado de implementación:
+
+1. Definir el evento versionado en `events.py`.
+2. Registrar su contrato en `registry.py`.
+3. Registrar el handler en `handlers.py`.
+4. Cargar registros en `apps.py` dentro de `ready()`.
+5. Usar `signals.py` solo cuando necesites emitir desde eventos internos de Django.
+
+Responsabilidades esperadas:
+
+- **Negocio**: en la app de dominio (no en `core` del framework).
+- **Contrato**: en `events.py` + `registry.py`.
+- **Ejecución**: en `handlers.py` una vez validado firma/schema/idempotencia.
+- **Signals**: mecanismo opcional de emisión; no reemplaza contrato ni versionado.
+
+Versionado y compatibilidad:
+
+- No rompas `v1` cambiando payload de forma incompatible.
+- Crea `v2` para cambios rompientes.
+- Mantén convivencia temporal (`v1` + `v2`) hasta migrar consumidores.
+
+Checklist operativo corto para integradores:
+
+- [ ] Crear/actualizar `events.py`, `registry.py`, `handlers.py`, `apps.py` (y `signals.py` si aplica).
+- [ ] Verificar que los contratos de evento estén registrados.
+- [ ] Verificar que los handlers estén registrados y sean idempotentes.
+- [ ] Confirmar que cambios rompientes salgan en nueva versión (`v2`).
+- [ ] Probar flujo completo antes de producción (firma, schema, dispatch, deduplicación).
+
+## 10. Problemas frecuentes
 
 - `Invalid signature`: secreto incorrecto, expirado o replay fuera de tolerancia.
 - `duplicate`: mismo `X-Event-ID` ya procesado.
@@ -177,13 +222,13 @@ Notas de métricas (modo lean):
 - `failed` en outbox: endpoint caido o respuestas no-2xx.
 - Timeouts frecuentes: subir `request_timeout_seconds` o reducir carga en el receiver.
 
-## 9.1 Regla de oro operativa
+## 10.1 Regla de oro operativa
 
 - Nunca permitas que dos apps sean source-of-truth de la misma entidad.
 - Webhook = "informo estado".
 - REST = "solicito acción".
 
-## 9.2 Auditoria liviana del intercambio (recomendado)
+## 10.2 Auditoria liviana del intercambio (recomendado)
 
 Para operar con bajo costo y baja carga mental, usa la guia dedicada:
 
@@ -202,7 +247,7 @@ Recursos listos para usar:
 - `docs/examples/audit-record-template.json`
 - `docs/incident-playbook.md`
 
-## 10. Producción (modo lean + Sentry Free)
+## 11. Producción (modo lean + Sentry Free)
 
 Stack mínimo recomendado:
 
@@ -235,7 +280,7 @@ Regla práctica de operación:
 
 - Si `DeadLetter` o `OutgoingEvent.failed` crece más de lo normal por 15 min, abrir incidente y pausar nuevas integraciones hasta estabilizar.
 
-## 11. Docker Compose / Coolify con repositorio privado
+## 12. Docker Compose / Coolify con repositorio privado
 
 Si tu proyecto consumidor usa Docker Compose o Coolify y este paquete se instala desde GitHub privado, considera lo siguiente:
 
