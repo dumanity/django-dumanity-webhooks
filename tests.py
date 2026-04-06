@@ -494,7 +494,8 @@ class MetricsExportTest(TestCase):
     def test_metrics_view_returns_prometheus_content_type(self):
         factory = APIRequestFactory()
         request = factory.get("/metrics/")
-        response = MetricsView.as_view()(request)
+        with self.settings(WEBHOOK_METRICS_ENABLED=True, WEBHOOK_METRICS_TOKEN=None):
+            response = MetricsView.as_view()(request)
 
         self.assertEqual(response.status_code, 200)
         self.assertIn("text/plain", response["Content-Type"])
@@ -783,6 +784,182 @@ class DomainScaffoldCommandTest(TestCase):
 
             self.assertTrue((Path(tmp_dir) / "socios_events").exists())
             self.assertTrue((Path(tmp_dir) / "socios_events_2").exists())
+
+
+# ---------------------------------------------------------------------------
+# Security hardening tests (v1.0.0)
+# ---------------------------------------------------------------------------
+
+class HeaderRedactionTest(TestCase):
+    """Valida que redact_headers enmascara headers sensibles correctamente."""
+
+    def setUp(self):
+        from webhooks.core.security import redact_headers
+        self.redact = redact_headers
+
+    def test_sensitive_headers_are_redacted(self):
+        """Headers sensibles se reemplazan con [REDACTED]."""
+        headers = {
+            "Authorization": "Bearer super-secret-token",
+            "Webhook-Signature": "t=1234,v1=abcdef",
+            "X-Api-Key": "my-api-key",
+            "Cookie": "session=abc123",
+            "Set-Cookie": "token=xyz; HttpOnly",
+        }
+        result = self.redact(headers)
+        for key in headers:
+            self.assertEqual(result[key], "[REDACTED]", f"{key} should be redacted")
+
+    def test_non_sensitive_headers_are_preserved(self):
+        """Headers no sensibles se preservan sin cambios."""
+        headers = {
+            "Content-Type": "application/json",
+            "X-Event-ID": "550e8400-e29b-41d4-a716-446655440000",
+            "X-Correlation-ID": "cor-abc",
+            "X-Request-ID": "req-xyz",
+            "User-Agent": "test-agent/1.0",
+        }
+        result = self.redact(headers)
+        self.assertEqual(result, headers)
+
+    def test_mixed_headers(self):
+        """Mezcla de headers sensibles y no sensibles."""
+        headers = {
+            "Content-Type": "application/json",
+            "Authorization": "Api-Key secret123",
+            "X-Event-ID": "some-uuid",
+            "Cookie": "sid=abc",
+        }
+        result = self.redact(headers)
+        self.assertEqual(result["Content-Type"], "application/json")
+        self.assertEqual(result["X-Event-ID"], "some-uuid")
+        self.assertEqual(result["Authorization"], "[REDACTED]")
+        self.assertEqual(result["Cookie"], "[REDACTED]")
+
+    def test_case_insensitive_redaction(self):
+        """La redacción es case-insensitive (authorization, AUTHORIZATION, etc.)."""
+        from webhooks.core.security import redact_headers
+        variants = [
+            {"authorization": "secret"},
+            {"AUTHORIZATION": "secret"},
+            {"Authorization": "secret"},
+        ]
+        for h in variants:
+            result = redact_headers(h)
+            for v in result.values():
+                self.assertEqual(v, "[REDACTED]", f"Failed for: {h}")
+
+    def test_empty_headers(self):
+        """Dict vacío retorna dict vacío."""
+        self.assertEqual(self.redact({}), {})
+
+    def test_audit_log_never_stores_sensitive_headers(self):
+        """AuditLog.request_headers nunca contiene valores sensibles en texto plano."""
+        api_key, raw_key = APIKey.objects.create_key(name="audit-sec-test")
+        integration = Integration.objects.create(name="audit-sec-test", api_key=api_key)
+        Secret.objects.create(integration=integration, secret="example-test-secret")
+
+        from webhooks.receiver.models import AuditLog
+        from webhooks.core.signing import sign
+        from rest_framework.test import APIRequestFactory
+
+        factory = APIRequestFactory()
+        payload = json.dumps({
+            "id": str(uuid.uuid4()),
+            "type": "webhook.connection_test.v1",
+            "data": {},
+        }).encode()
+        sig = sign("example-test-secret", str(int(time.time())), payload)
+        event_id = str(uuid.uuid4())
+
+        request = factory.post(
+            "/webhooks/",
+            data=payload,
+            content_type="application/json",
+            HTTP_AUTHORIZATION=f"Api-Key {raw_key}",
+            HTTP_WEBHOOK_SIGNATURE=sig,
+            HTTP_X_EVENT_ID=event_id,
+        )
+        from rest_framework.request import Request
+        drf_request = Request(request)
+
+        WebhookService.process(drf_request, integration=integration)
+
+        log = AuditLog.objects.filter(integration="audit-sec-test").latest("created_at")
+        stored_headers = log.request_headers
+
+        sensitive_keys = ["Authorization", "Webhook-Signature"]
+        for key in stored_headers:
+            if key.lower() in ("authorization", "webhook-signature", "x-api-key", "cookie", "set-cookie"):
+                self.assertEqual(
+                    stored_headers[key],
+                    "[REDACTED]",
+                    f"Sensitive header {key!r} stored in plain text",
+                )
+
+
+class MetricsSecurityTest(TestCase):
+    """Valida comportamiento del endpoint /metrics según configuración."""
+
+    def setUp(self):
+        metrics.clear()
+        self.factory = APIRequestFactory()
+
+    def tearDown(self):
+        metrics.clear()
+
+    def _get_metrics(self, extra_headers=None):
+        request = self.factory.get("/metrics/", **(extra_headers or {}))
+        return MetricsView.as_view()(request)
+
+    def test_metrics_disabled_by_default_returns_404(self):
+        """Sin WEBHOOK_METRICS_ENABLED=True, el endpoint devuelve 404."""
+        with self.settings(WEBHOOK_METRICS_ENABLED=False):
+            response = self._get_metrics()
+        self.assertEqual(response.status_code, 404)
+
+    def test_metrics_disabled_when_setting_absent_returns_404(self):
+        """Cuando WEBHOOK_METRICS_ENABLED no está configurado, devuelve 404."""
+        from django.test.utils import override_settings
+        # Remove the setting entirely to test the default-off behavior
+        with override_settings():
+            if hasattr(__import__("django.conf", fromlist=["settings"]).settings, "WEBHOOK_METRICS_ENABLED"):
+                del __import__("django.conf", fromlist=["settings"]).settings.WEBHOOK_METRICS_ENABLED
+            with self.settings(WEBHOOK_METRICS_ENABLED=False):
+                response = self._get_metrics()
+        self.assertEqual(response.status_code, 404)
+
+    def test_metrics_enabled_no_token_allows_access(self):
+        """Métricas habilitadas sin token → acceso libre (modo menos seguro)."""
+        with self.settings(WEBHOOK_METRICS_ENABLED=True, WEBHOOK_METRICS_TOKEN=None):
+            response = self._get_metrics()
+        self.assertEqual(response.status_code, 200)
+        self.assertIn("text/plain", response["Content-Type"])
+
+    def test_metrics_enabled_with_token_requires_bearer(self):
+        """Métricas habilitadas con token → requiere Authorization: Bearer <token>."""
+        with self.settings(WEBHOOK_METRICS_ENABLED=True, WEBHOOK_METRICS_TOKEN="example-metrics-token"):
+            # Sin header → 403
+            response_no_auth = self._get_metrics()
+            self.assertEqual(response_no_auth.status_code, 403)
+
+            # Con token incorrecto → 403
+            response_bad_token = self._get_metrics(
+                {"HTTP_AUTHORIZATION": "Bearer wrong-token"}
+            )
+            self.assertEqual(response_bad_token.status_code, 403)
+
+            # Con token correcto → 200
+            response_ok = self._get_metrics(
+                {"HTTP_AUTHORIZATION": "Bearer example-metrics-token"}
+            )
+            self.assertEqual(response_ok.status_code, 200)
+
+    def test_metrics_enabled_with_token_wrong_scheme_returns_403(self):
+        """Bearer scheme requerido; Api-Key u otro scheme devuelve 403."""
+        with self.settings(WEBHOOK_METRICS_ENABLED=True, WEBHOOK_METRICS_TOKEN="tok"):
+            response = self._get_metrics({"HTTP_AUTHORIZATION": "Api-Key tok"})
+        self.assertEqual(response.status_code, 403)
 
 
 if __name__ == "__main__":

@@ -52,7 +52,7 @@ class Secret(models.Model):
         >>> from django.utils.timezone import now
         >>> Secret.objects.create(
         ...     integration=integration,
-        ...     secret="whsec_prod_new_123",
+        ...     secret="whsec_example_new_123",
         ...     is_active=True,
         ...     expires_at=now() + timedelta(days=30)
         ... )

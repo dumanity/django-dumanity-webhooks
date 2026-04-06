@@ -50,11 +50,7 @@ from webhooks.producer.models import WebhookEndpoint
 WebhookEndpoint.objects.create(
     name="billing-service",
     url="https://billing.example.com/webhooks/",
-    secret="whsec_prod_123",
-    is_active=True,
-    max_retries=5,
-    request_timeout_seconds=10,
-)
+    secret="whsec_example_123",
 ```
 
 Campos recomendados por endpoint:
@@ -81,7 +77,7 @@ from webhooks.producer.services import probe_connection
 
 result = probe_connection(
         endpoint=endpoint,
-        api_key="<receiver_api_key>",  # opcional si el receiver la exige
+        api_key="<your_receiver_api_key>",  # opcional si el receiver la exige
         timeout_seconds=5,
 )
 
@@ -100,8 +96,8 @@ También disponible por CLI:
 ```bash
 webhooks-info test-endpoint \
     --url https://receiver.example.com/webhooks/ \
-    --secret whsec_prod_123 \
-    --api-key <receiver_api_key> \
+    --secret whsec_example_123 \
+    --api-key <your_receiver_api_key> \
     --timeout 5
 ```
 
@@ -136,9 +132,7 @@ integration = Integration.objects.create(name="producer-a", api_key=api_key)
 
 Secret.objects.create(
     integration=integration,
-    secret="whsec_prod_123",
-    is_active=True,
-    expires_at=now() + timedelta(days=30),
+    secret="whsec_example_123",
 )
 ```
 

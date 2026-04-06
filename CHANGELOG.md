@@ -1,0 +1,51 @@
+# Changelog
+
+All notable changes to this project will be documented in this file.
+
+## [1.0.0] – 2026-04-06
+
+### Security
+
+- **Header redaction in AuditLog**: Sensitive request headers (`Authorization`,
+  `Webhook-Signature`, `X-Api-Key`, `Cookie`, `Set-Cookie`) are now redacted to
+  `[REDACTED]` before being persisted in `AuditLog.request_headers`.  The
+  redaction utility lives in `webhooks.core.security.redact_headers` and is
+  applied deterministically on every incoming webhook request.
+
+- **Hardened `/metrics` endpoint** – The endpoint is now **disabled by default**
+  (`WEBHOOK_METRICS_ENABLED` defaults to `False`).  To enable it, set
+  `WEBHOOK_METRICS_ENABLED = True` in Django settings.  An optional
+  `WEBHOOK_METRICS_TOKEN` setting enforces bearer-token authentication
+  (`Authorization: Bearer <token>`); requests without a valid token receive
+  a `403` response.  See the README for the full configuration table.
+
+- **Safe example placeholders** – All documentation, docstrings, and test
+  fixtures that previously used prod-sounding secrets (`whsec_prod_123`,
+  `test-secret-key`, `<receiver_api_key>`) have been replaced with clearly
+  fictitious values (`whsec_example_123`, `example-test-secret-key`,
+  `<your_receiver_api_key>`).  A "Safe Examples Policy" note was added to the
+  README.
+
+- **CodeQL SAST** – Added `.github/workflows/codeql.yml` to run GitHub CodeQL
+  static analysis for Python on every push, pull request, and weekly schedule.
+
+- **Dependabot** – Added `.github/dependabot.yml` to keep `pip` dependencies
+  and GitHub Actions up to date automatically (weekly cadence).
+
+### Changed
+
+- `webhooks.receiver.api.MetricsView` now checks `WEBHOOK_METRICS_ENABLED` and
+  `WEBHOOK_METRICS_TOKEN` settings before returning metrics data.  **Breaking
+  for any deployment that relied on the unauthenticated open metrics endpoint**:
+  set `WEBHOOK_METRICS_ENABLED = True` (and optionally `WEBHOOK_METRICS_TOKEN`)
+  in your settings to restore access.
+
+### Added
+
+- `webhooks.core.security` module with `redact_headers()` utility function.
+- 11 new security-focused tests in `tests.py` covering header redaction and
+  metrics endpoint access control.
+
+## [0.3.0] and earlier
+
+See repository history.
