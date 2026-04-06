@@ -142,6 +142,144 @@ Secret.objects.create(
 )
 ```
 
+### 5.1 Ejemplo completo: dos proyectos Django (A ↔ B), ambos receiver + producer
+
+Objetivo: que **Proyecto A** y **Proyecto B** se envíen eventos en ambos sentidos usando el mismo framework.
+
+#### Paso 1: instalar en ambos proyectos
+
+En A y en B:
+
+```bash
+uv add "django-dumanity-webhooks @ git+https://github.com/dumanity/django-dumanity-webhooks.git@v0.3.0"
+```
+
+```python
+INSTALLED_APPS += [
+    "webhooks.core",
+    "webhooks.producer",
+    "webhooks.receiver",
+]
+```
+
+```bash
+python manage.py makemigrations
+python manage.py migrate
+```
+
+#### Paso 2: exponer endpoint receiver en ambos
+
+En `urls.py` de A y de B:
+
+```python
+from django.urls import path
+from webhooks.receiver.api import WebhookView
+
+urlpatterns = [
+    path("webhooks/", WebhookView.as_view()),
+]
+```
+
+#### Paso 3: crear credenciales cruzadas (A acepta a B, B acepta a A)
+
+En **Proyecto A** (para aceptar eventos enviados por B):
+
+```python
+from datetime import timedelta
+from django.utils.timezone import now
+from rest_framework_api_key.models import APIKey
+from webhooks.receiver.models import Integration, Secret
+
+api_key_b_to_a, plaintext_b_to_a = APIKey.objects.create_key(name="project-b")
+integration_b_to_a = Integration.objects.create(name="project-b", api_key=api_key_b_to_a)
+Secret.objects.create(
+    integration=integration_b_to_a,
+    secret="whsec_b_to_a_example",
+    is_active=True,
+    expires_at=now() + timedelta(days=30),
+)
+```
+
+En **Proyecto B** (para aceptar eventos enviados por A):
+
+```python
+from datetime import timedelta
+from django.utils.timezone import now
+from rest_framework_api_key.models import APIKey
+from webhooks.receiver.models import Integration, Secret
+
+api_key_a_to_b, plaintext_a_to_b = APIKey.objects.create_key(name="project-a")
+integration_a_to_b = Integration.objects.create(name="project-a", api_key=api_key_a_to_b)
+Secret.objects.create(
+    integration=integration_a_to_b,
+    secret="whsec_a_to_b_example",
+    is_active=True,
+    expires_at=now() + timedelta(days=30),
+)
+```
+
+> Guarda `plaintext_b_to_a` y `plaintext_a_to_b`: se usan como API key de autorización en el sentido contrario.
+
+#### Paso 4: crear endpoints producer cruzados
+
+En **Proyecto A** (A envía a B):
+
+```python
+from webhooks.producer.models import WebhookEndpoint
+
+endpoint_a_to_b = WebhookEndpoint.objects.create(
+    name="project-b",
+    url="https://project-b.example.com/webhooks/",
+    secret="whsec_a_to_b_example",
+    is_active=True,
+)
+```
+
+En **Proyecto B** (B envía a A):
+
+```python
+from webhooks.producer.models import WebhookEndpoint
+
+endpoint_b_to_a = WebhookEndpoint.objects.create(
+    name="project-a",
+    url="https://project-a.example.com/webhooks/",
+    secret="whsec_b_to_a_example",
+    is_active=True,
+)
+```
+
+#### Paso 5: publicar eventos en ambos sentidos
+
+En A (hacia B):
+
+```python
+from webhooks.producer.services import publish_event
+
+publish_event(endpoint_a_to_b, {
+    "id": "11111111-1111-4111-8111-111111111111",
+    "type": "order.created.v1",
+    "data": {"order_id": "A-1001"},
+})
+```
+
+En B (hacia A):
+
+```python
+from webhooks.producer.services import publish_event
+
+publish_event(endpoint_b_to_a, {
+    "id": "22222222-2222-4222-8222-222222222222",
+    "type": "payment.confirmed.v1",
+    "data": {"payment_id": "B-9001"},
+})
+```
+
+#### Paso 6: operación mínima en ambos
+
+- Ejecutar worker en A: `python manage.py runworker`
+- Ejecutar worker en B: `python manage.py runworker`
+- Verificar logs/estado de `OutgoingEvent`, `EventLog` y `DeadLetter` en ambos proyectos.
+
 ## 6. Firma y headers
 
 - Header de firma: `Webhook-Signature`
