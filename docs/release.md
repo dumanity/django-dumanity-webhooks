@@ -2,6 +2,25 @@
 
 Guia operativa para distribuir `django-dumanity-webhooks` de forma privada primero.
 
+## Changelog v1.1.0 (Secure-by-default + DX premium)
+
+### Security
+- Replay seguro trazable: `webhooks_replay` exige `--reason`, soporta `--dry-run` y persiste metadatos de replay en `DeadLetter`.
+- Validación de contratos en runtime de mantenimiento: `webhooks_validate_contracts` para detectar contratos mal definidos antes de producción.
+
+### Added
+- `docs/quickstart.md` (onboarding end-to-end de 10 minutos).
+- `docs/hardening-guide.md` (checklist de hardening en producción).
+- Nuevos comandos operativos:
+  - `webhooks_bootstrap`
+  - `webhooks_validate_contracts`
+  - `webhooks_list_failures`
+  - `webhooks_replay`
+
+### Changed
+- `start_webhook_domain` ahora incluye next steps más guiados y referencia explícita a validación de contratos.
+- `webhooks-info test-endpoint` ahora imprime resumen didáctico con pasos de resolución.
+
 ## Changelog v1.0.0 (Stable — seguridad endurecida)
 
 ### Security
@@ -73,7 +92,7 @@ cp -R dist/ /ruta/interna/artefactos/
 Agregar dependencia privada por tag (usar la versión estable actual):
 
 ```bash
-uv add "django-dumanity-webhooks @ git+https://github.com/dumanity/django-dumanity-webhooks.git@v1.0.0"
+uv add "django-dumanity-webhooks @ git+https://github.com/dumanity/django-dumanity-webhooks.git@v1.1.0"
 ```
 
 o declararla en `pyproject.toml` del consumidor:
@@ -81,7 +100,7 @@ o declararla en `pyproject.toml` del consumidor:
 ```toml
 [project]
 dependencies = [
-	"django-dumanity-webhooks @ git+https://github.com/dumanity/django-dumanity-webhooks.git@v1.0.0",
+	"django-dumanity-webhooks @ git+https://github.com/dumanity/django-dumanity-webhooks.git@v1.1.0",
 ]
 ```
 

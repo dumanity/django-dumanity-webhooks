@@ -1,6 +1,6 @@
 # Testing Guide
 
-Suite de tests para `django-dumanity-webhooks` 1.0.0.
+Suite de tests para `django-dumanity-webhooks` 1.1.0.
 
 ## Quick Start
 
@@ -60,6 +60,9 @@ Tests de integración extremo a extremo con ejemplos de configuración.
 
 ### `DomainScaffoldCommandTest`
 Valida el comando `start_webhook_domain` para scaffold de dominios.
+
+### `BootstrapAndOpsCommandsTest`
+Valida bootstrap automático, validación de contratos y operación (list/replay).
 
 ### `HeaderRedactionTest`
 Valida que headers sensibles se redactan antes de persistir en AuditLog.
@@ -182,4 +185,3 @@ Migraciones no aplicadas. pytest-django las aplica automáticamente cuando
 ### Fixture Loading Issues
 
 Tests crean datos en `setUp()`. Si necesitas fixtures, ver Django TestCase docs.
-

@@ -82,6 +82,9 @@ Eso evita colisiones cuando el paquete se instala en proyectos que ya tienen una
 - `receiver.Secret.expires_at`
 - `receiver.DeadLetter.retries`
 - `receiver.AuditLog`
+- `receiver.DeadLetter.replayed_at`
+- `receiver.DeadLetter.replay_reason`
+- `receiver.DeadLetter.replay_event_id`
 
 Tras cambios de modelos, correr:
 
@@ -142,6 +145,7 @@ Opciones utiles:
 python manage.py start_webhook_domain billing --output-dir ./domains
 python manage.py start_webhook_domain notifications --package-name notifications_events
 python manage.py start_webhook_domain orders --dry-run
+python manage.py webhooks_validate_contracts
 ```
 
 Resolucion de colisiones de nombres:
@@ -204,6 +208,12 @@ Si cambia el payload, no sobreescribas el mismo evento: crea `v2` y conserva `v1
 - **Multi-secret safe**: rotación sin downtime con ventana de transición.
 - **Políticas por endpoint**: `max_retries` y `request_timeout_seconds` configurables por destino.
 
+### Garantías implementadas (v1.1.0)
+- **Bootstrap seguro**: `webhooks_bootstrap` acelera setup inicial sin defaults inseguros.
+- **Contract-first validable**: `webhooks_validate_contracts` detecta contratos inválidos y errores básicos de versionado.
+- **Replay trazable**: `webhooks_replay` requiere motivo, soporta `--dry-run` y registra metadatos de replay.
+- **Operación guiada**: `webhooks_list_failures` expone fallos de outbox/DLQ con pasos de resolución.
+
 ## 8. Roadmap sugerido
 
 1. ✓ ~~Resolver integracion desde API key de forma estricta~~ (hecho en v1.0.0).
@@ -233,7 +243,7 @@ Cuando un proyecto consumidor instala este paquete desde GitHub privado en Docke
 1. Habilitar BuildKit.
 2. Resolver dependencia en build-time con `uv sync`.
 3. Usar SSH deploy key read-only o secret de build.
-4. Fijar dependencia por tag (`@v1.0.0`) o commit SHA.
+4. Fijar dependencia por tag (`@v1.1.0`) o commit SHA.
 
 Anti-patrones a evitar:
 

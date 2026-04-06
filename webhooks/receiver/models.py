@@ -126,6 +126,9 @@ class DeadLetter(models.Model):
     retries = models.IntegerField(default=0)
     correlation_id = models.CharField(max_length=100, null=True, blank=True)
     request_id = models.CharField(max_length=100, null=True, blank=True)
+    replayed_at = models.DateTimeField(null=True, blank=True)
+    replay_reason = models.TextField(null=True, blank=True)
+    replay_event_id = models.UUIDField(null=True, blank=True)
 
 
 class AuditLog(models.Model):
