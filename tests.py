@@ -267,7 +267,7 @@ class ProducerOutboxTest(TestCase):
         
         self.assertNotEqual(event_a.endpoint_id, event_b.endpoint_id)
 
-    @patch("webhooks.producer.sender.requests.post")
+    @patch("webhooks.producer.sender.httpx.post")
     def test_sender_uses_endpoint_specific_timeout(self, mock_post):
         """send usa timeout configurado en el endpoint."""
         payload = {
@@ -284,7 +284,7 @@ class ProducerOutboxTest(TestCase):
         mock_post.assert_called_once()
         self.assertEqual(mock_post.call_args.kwargs["timeout"], 3)
 
-    @patch("webhooks.producer.sender.requests.post")
+    @patch("webhooks.producer.sender.httpx.post")
     def test_sender_includes_trace_headers(self, mock_post):
         """send agrega X-Correlation-ID y X-Request-ID cuando existen."""
         payload = {

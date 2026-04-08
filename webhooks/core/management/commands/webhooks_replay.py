@@ -8,6 +8,7 @@ from django.utils.timezone import now
 from webhooks.producer.models import OutgoingEvent, WebhookEndpoint
 from webhooks.producer.services import publish_event
 from webhooks.receiver.models import DeadLetter
+from webhooks.signals import webhook_replayed
 
 
 class Command(BaseCommand):
@@ -89,5 +90,13 @@ class Command(BaseCommand):
         dead_letter.replay_reason = reason
         dead_letter.replay_event_id = replay_id
         dead_letter.save(update_fields=["replayed_at", "replay_reason", "replay_event_id"])
+
+        webhook_replayed.send(
+            sender=self.__class__,
+            dead_letter_id=dead_letter.id,
+            replay_event_id=replay_id,
+            endpoint_name=endpoint.name,
+        )
+
         self.stdout.write(self.style.SUCCESS("Replay enqueued in outbox."))
         self.stdout.write(f"outgoing_event_id={event.id} replay_event_id={replay_id}")
