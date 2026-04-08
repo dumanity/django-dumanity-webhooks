@@ -1,5 +1,7 @@
 import json
+import secrets
 import uuid
+from datetime import timedelta
 
 from jsonschema import validate
 from django.db.models import Q
@@ -160,3 +162,64 @@ class WebhookService:
 
         log.save()
         return "ok"
+
+
+def bootstrap_receiver(integration_name: str, shared_secret: str | None = None, expires_days: int = 30) -> dict:
+    """
+    Crea o reutiliza una Integration con su API Key y un Secret inicial.
+
+    Pensado para ser invocado tanto desde el management command ``webhooks_bootstrap``
+    como desde el Django Admin, evitando duplicar lógica.
+
+    Args:
+        integration_name: Nombre descriptivo de la integración (ej: "producer-a").
+        shared_secret: Secreto HMAC compartido. Si es None se genera automáticamente.
+        expires_days: Días hasta que expira el secreto (mínimo 1).
+
+    Returns:
+        dict con las claves:
+            - ``integration``: instancia de Integration creada o reutilizada.
+            - ``api_key_plaintext``: str con la API key en claro, o None si
+              la integración ya existía (la clave no puede recuperarse).
+            - ``secret``: str con el secreto HMAC compartido.
+            - ``integration_reused``: bool, True si la Integration ya existía.
+
+    Example::
+
+        result = bootstrap_receiver("producer-a", expires_days=30)
+        # Guardar en vault:
+        # result["api_key_plaintext"]  → Authorization: Api-Key <value>
+        # result["secret"]             → compartir con el producer
+    """
+    from rest_framework_api_key.models import APIKey
+    from .models import Integration, Secret
+
+    if expires_days < 1:
+        raise ValueError("expires_days must be >= 1")
+
+    resolved_secret = shared_secret or f"whsec_{secrets.token_urlsafe(24)}"
+    expires_at = now() + timedelta(days=expires_days)
+
+    existing = Integration.objects.filter(name=integration_name).first()
+    if existing:
+        integration = existing
+        api_key_plaintext = None
+        integration_reused = True
+    else:
+        api_key_obj, api_key_plaintext = APIKey.objects.create_key(name=integration_name)
+        integration = Integration.objects.create(name=integration_name, api_key=api_key_obj)
+        integration_reused = False
+
+    Secret.objects.create(
+        integration=integration,
+        secret=resolved_secret,
+        is_active=True,
+        expires_at=expires_at,
+    )
+
+    return {
+        "integration": integration,
+        "api_key_plaintext": api_key_plaintext,
+        "secret": resolved_secret,
+        "integration_reused": integration_reused,
+    }

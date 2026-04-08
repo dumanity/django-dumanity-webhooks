@@ -17,6 +17,11 @@ Objetivo: resolver en 10-15 minutos el 80% de incidentes sin escalar complejidad
 3. Verificar si el fallo fue en comando REST, webhook o persistencia final.
 4. Clasificar severidad.
 
+Acceso rápido desde Admin (sin terminal):
+- Admin → **Audit Logs** → buscar por `event_id` o `correlation_id`.
+- Admin → **Event Logs** → buscar por `event_id` para confirmar idempotencia/estado.
+- Admin → **Dead Letters** → ver razón del fallo y si ya fue replayado.
+
 ## 3. Flujo de diagnostico rapido (10 minutos)
 
 1. Buscar en trazas por `correlation_id`.
@@ -46,9 +51,35 @@ Objetivo: resolver en 10-15 minutos el 80% de incidentes sin escalar complejidad
 
 ### `event_not_delivered`
 
-- Reenviar evento por `event_id`.
-- Confirmar llegada por `EventLog`.
-- Si falla por firma, rotar/validar secreto antes de nuevo replay.
+- Verificar firma: si es inválida, rotar/validar secreto antes del replay.
+- Confirmar que el endpoint receiver esté activo y accesible.
+- Reenviar evento por `event_id` — elige la vía más rápida para tu situación:
+
+  **Admin (sin terminal — recomendado para guardia):**
+  1. Admin → **Dead Letters** → fila del evento → botón **"Replay"**.
+  2. Selecciona el endpoint destino y escribe el motivo del replay.
+  3. Activa **"Generar nuevo event ID"** (recomendado para evitar colisión).
+  4. Confirma. El evento queda en el outbox y el DeadLetter se marca como replayado.
+
+  **CLI:**
+  ```bash
+  # Primero validar con --dry-run
+  python manage.py webhooks_replay \
+    --dead-letter-id <id> \
+    --endpoint-id <uuid> \
+    --reason "Handler corregido tras incidente #XYZ" \
+    --new-event-id \
+    --dry-run
+
+  # Ejecutar tras confirmar
+  python manage.py webhooks_replay \
+    --dead-letter-id <id> \
+    --endpoint-id <uuid> \
+    --reason "Handler corregido tras incidente #XYZ" \
+    --new-event-id
+  ```
+
+- Confirmar llegada buscando el `replay_event_id` en Admin → **Event Logs**.
 
 ### `state_mismatch`
 

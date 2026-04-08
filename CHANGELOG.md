@@ -2,6 +2,73 @@
 
 All notable changes to this project will be documented in this file.
 
+## [1.2.0] – 2026-04-08
+
+### Added
+
+- **Django Admin completo para el Receiver** – Nuevas clases `IntegrationAdmin`,
+  `SecretAdmin`, `EventLogAdmin`, `DeadLetterAdmin` y `AuditLogAdmin` en
+  `webhooks/receiver/admin.py`. Gestión completa de integraciones, secretos,
+  dead letters y audit logs sin necesidad de CLI ni acceso a la consola Django.
+
+- **Bootstrap desde Admin** – Botón "Bootstrap nueva integración" en el
+  changelist de Integraciones lanza un formulario seguro que llama internamente
+  a `bootstrap_receiver()`. La API Key se muestra una sola vez en el mensaje
+  de confirmación.
+
+- **Replay desde Admin** – `DeadLetterAdmin` incluye botón "Replay" por fila
+  con formulario de endpoint + motivo + checkbox "Nuevo event ID", y una acción
+  bulk "Replay seleccionados". Ambas rutas aplican las mismas guardas que el
+  comando CLI (anti-doble-replay, bloqueo de colisión de outbox).
+
+- **Rotación de secreto desde Admin** – Botón "Rotar secreto" por fila en
+  `IntegrationAdmin`. Crea un secreto nuevo activo con expiración de 30 días;
+  el anterior permanece activo para ventana de transición.
+
+- **`bootstrap_receiver()` como API pública** – Nueva función en
+  `webhooks.receiver.services` que encapsula la creación de Integration +
+  APIKey + Secret en una sola llamada reutilizable. Usada por el management
+  command `webhooks_bootstrap --receiver-only` y por el Admin.
+
+- **Templates Django Admin** – Tres templates en
+  `webhooks/receiver/templates/admin/dumanity_webhooks_receiver/`:
+  `integration/change_list.html`, `integration/bootstrap.html`,
+  `deadletter/replay.html`.
+
+### Security
+
+- **Redacción en Admin** – `SecretAdmin` nunca expone el valor completo de un
+  secreto: muestra solo los primeros 8 caracteres seguidos de `[REDACTED]`.
+  `EventLogAdmin` y `AuditLogAdmin` son solo-lectura sin permisos de add,
+  change ni delete.
+
+### Changed
+
+- **`webhooks_bootstrap` refactorizado** – El management command
+  `webhooks_bootstrap --receiver-only` delega ahora a `bootstrap_receiver()`
+  en lugar de duplicar la lógica, garantizando paridad de comportamiento entre
+  CLI y Admin.
+
+- **Quickstart reescrito** – `docs/quickstart.md` reestructurado con roles
+  explícitos 📥 Receiver / 📤 Producer, diagrama ASCII, Admin como opción
+  primaria en cada paso, y tabla de troubleshooting.
+
+- **Documentación actualizada** – `docs/hardening-guide.md`,
+  `docs/developers-guide.md`, `docs/incident-playbook.md`,
+  `docs/users-guide.md`, `README.md` y `webhooks/README.md` actualizados
+  con flujos Admin, API de `bootstrap_receiver()`, e instrucciones de replay
+  desde Admin.
+
+### Tests
+
+- 24 nuevos tests de unit/integración cubriendo:
+  `BootstrapReceiverServiceTest`, `ReceiverIntegrationAdminTest`,
+  `ReceiverSecretAdminTest`, `ReceiverDeadLetterAdminTest`,
+  `ReceiverAdminReadonlyModelsTest`.
+- 6 nuevos tests E2E con Django `TestClient` (superuser autenticado) que
+  verifican el ciclo completo Admin → DB para bootstrap, replay y rotación
+  de secretos.
+
 ## [1.1.0] – 2026-04-06
 
 ### Security

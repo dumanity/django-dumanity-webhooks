@@ -50,6 +50,9 @@ python manage.py migrate
 
 ## 4. Configuracion producer
 
+La forma más rápida es desde el Admin (ver sección 4.1).  
+También puedes crear el endpoint por código o CLI:
+
 ```python
 from webhooks.producer.models import WebhookEndpoint
 
@@ -113,9 +116,17 @@ webhooks-info test-endpoint \
 
 UI mínima en Django Admin:
 
-- En `WebhookEndpoint` está disponible la acción `Probar conexión al receiver`.
+- En **Webhook Endpoints** está disponible la acción `Probar conexión al receiver`.
 - Ejecuta la prueba para los endpoints seleccionados y muestra resultado en mensajes del admin.
 - También hay botón por fila `Probar` en la columna `Conectividad` para test rápido de un endpoint.
+
+### 4.1 Configuración desde Django Admin (producer)
+
+1. Admin → **Webhook Endpoints** → **Añadir endpoint**.
+2. Completa **Name**, **URL** del receiver, **Secret** compartido, y activa **Is active**.
+3. Opcional: ajusta `max_retries` y `request_timeout_seconds`.
+4. Guarda.
+5. Usa el botón **Probar** de la fila para verificar la conexión al Receiver.
 
 ## 5. Configuracion receiver
 
@@ -147,6 +158,50 @@ Secret.objects.create(
     expires_at=now() + timedelta(days=30),
 )
 ```
+
+O en una sola llamada con el servicio:
+
+```python
+from webhooks.receiver.services import bootstrap_receiver
+
+result = bootstrap_receiver("producer-a", shared_secret="whsec_example_123", expires_days=30)
+# result["api_key_plaintext"]  → guardar en vault
+# result["secret"]             → compartir con el producer
+```
+
+### 5.1 Configuración desde Django Admin (receiver)
+
+El receiver expone un Admin completo para gestionar integraciones sin tocar código.
+
+**Crear nueva integración (bootstrap):**
+
+1. Admin → **Integraciones** → botón **"Bootstrap nueva integración"**.
+2. Completa el nombre del producer remoto (ej: `producer-a`).
+3. Deja el secret vacío (se genera) o escribe uno compartido con el producer.
+4. ⚠️ **Copia AHORA** la API Key y el Secret que aparecen en pantalla — no se vuelven a mostrar.
+
+**Rotar secreto:**
+
+1. Admin → **Integraciones** → fila de la integración → botón **"Rotar secreto"**.
+2. Se crea un secreto nuevo activo. El anterior sigue activo para ventana de transición.
+3. Copia el prefijo del nuevo secreto y actualízalo en el producer.
+4. Cuando el producer esté usando el nuevo secreto, desactiva el anterior en Admin → **Secretos**.
+
+**Replay de Dead Letters:**
+
+1. Admin → **Dead Letters** → fila del evento fallido → botón **"Replay"**.
+2. Selecciona el endpoint destino y escribe el motivo.
+3. Confirma. El evento se encola en el outbox con nuevo `event_id` y trazabilidad completa.
+
+**Vistas disponibles en el Admin del Receiver:**
+
+| Sección | Acciones |
+|---|---|
+| **Integraciones** | Ver, bootstrap, rotar secreto |
+| **Secretos** | Ver (parcialmente), desactivar en bulk |
+| **Event Logs** | Solo lectura — historial de eventos recibidos |
+| **Dead Letters** | Ver, replay individual, replay bulk |
+| **Audit Logs** | Solo lectura — historial de requests con headers redactados |
 
 ### 5.1 Ejemplo completo: dos proyectos Django (A ↔ B), ambos receiver + producer
 

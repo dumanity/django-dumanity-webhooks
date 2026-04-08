@@ -1,0 +1,101 @@
+{% extends "admin/base_site.html" %}
+{% load i18n %}
+
+{% block title %}{% trans "Replay DeadLetter" %} #{{ dead_letter.id }} | {{ block.super }}{% endblock %}
+
+{% block breadcrumbs %}
+<div class="breadcrumbs">
+    <a href="{% url 'admin:index' %}">{% trans "Inicio" %}</a>
+    &rsaquo; <a href="{% url 'admin:dumanity_webhooks_receiver_deadletter_changelist' %}">{% trans "Dead Letters" %}</a>
+    &rsaquo; {% trans "Replay" %} #{{ dead_letter.id }}
+</div>
+{% endblock %}
+
+{% block content %}
+<h1>{% trans "Replay DeadLetter" %} #{{ dead_letter.id }}</h1>
+
+<div class="help">
+    <p>
+        Encola el payload de este DeadLetter en el outbox del producer con un nuevo <code>event_id</code>
+        para reintento seguro. El DeadLetter queda marcado como replayado con trazabilidad completa.
+    </p>
+</div>
+
+<fieldset class="module aligned">
+    <h2>{% trans "Detalle del DeadLetter" %}</h2>
+    <div class="form-row">
+        <div><strong>{% trans "Razón del fallo" %}:</strong> {{ dead_letter.reason }}</div>
+    </div>
+    <div class="form-row">
+        <div><strong>{% trans "Reintentos" %}:</strong> {{ dead_letter.retries }}</div>
+    </div>
+    <div class="form-row">
+        <div>
+            <strong>{% trans "Tipo de evento" %}:</strong>
+            {{ dead_letter.payload.type|default:"—" }}
+        </div>
+    </div>
+    <div class="form-row">
+        <div>
+            <strong>{% trans "Event ID original" %}:</strong>
+            <code>{{ dead_letter.payload.id|default:"—" }}</code>
+        </div>
+    </div>
+</fieldset>
+
+<form method="post">
+    {% csrf_token %}
+
+    <fieldset class="module aligned">
+        <h2>{% trans "Configurar replay" %}</h2>
+
+        <div class="form-row">
+            <div>
+                <label class="required" for="id_endpoint_id">{% trans "Endpoint destino" %}:</label>
+                <select id="id_endpoint_id" name="endpoint_id" required>
+                    <option value="">— {% trans "Seleccionar endpoint activo" %} —</option>
+                    {% for ep in endpoints %}
+                        <option value="{{ ep.id }}">{{ ep.name }} ({{ ep.url }})</option>
+                    {% empty %}
+                        <option disabled>{% trans "No hay endpoints activos" %}</option>
+                    {% endfor %}
+                </select>
+                <p class="help">WebhookEndpoint activo al que se encolará el payload.</p>
+            </div>
+        </div>
+
+        <div class="form-row">
+            <div>
+                <label class="required" for="id_reason">{% trans "Motivo del replay" %}:</label>
+                <input type="text"
+                       id="id_reason"
+                       name="reason"
+                       maxlength="255"
+                       required
+                       placeholder="ej: Handler corregido tras bug #123">
+                <p class="help">Se guarda como trazabilidad en el DeadLetter. Obligatorio.</p>
+            </div>
+        </div>
+
+        <div class="form-row">
+            <div>
+                <label for="id_new_event_id">
+                    <input type="checkbox" id="id_new_event_id" name="new_event_id" value="1" checked>
+                    {% trans "Generar nuevo event ID (recomendado)" %}
+                </label>
+                <p class="help">
+                    Desmarcar solo si necesitas usar el mismo <code>event_id</code> original y sabes
+                    que el receiver no lo ha procesado antes.
+                </p>
+            </div>
+        </div>
+    </fieldset>
+
+    <div class="submit-row">
+        <input type="submit" value="{% trans "Encolar replay" %}" class="default">
+        <a href="{% url 'admin:dumanity_webhooks_receiver_deadletter_changelist' %}" class="closelink">
+            {% trans "Cancelar" %}
+        </a>
+    </div>
+</form>
+{% endblock %}
