@@ -1,6 +1,6 @@
-# django-dumanity-webhooks
+# django-dumanity-webhooks · v2.0.0
 
-Framework Django para webhooks seguros, desacoplados y listos para produccion.
+Framework Django para webhooks seguros, desacoplados y listos para producción.
 
 > **⚠️ Política de ejemplos seguros**
 > Todos los secretos, tokens y credenciales que aparecen en esta documentación,
@@ -9,40 +9,57 @@ Framework Django para webhooks seguros, desacoplados y listos para produccion.
 > ni capturas de pantalla.  Si un secreto real fue expuesto accidentalmente,
 > **rótalo de inmediato**.
 
+## Novedades en v2.0.0
+
+| Característica | Descripción |
+|---|---|
+| **httpx** | Reemplaza `requests` como transporte HTTP. Soporte nativo para async en el futuro. |
+| **Señales** | `webhook_received`, `webhook_dispatched`, `webhook_failed`, `webhook_replayed` — observabilidad sin acoplamiento. |
+| **`dispatch_webhook_sync()`** | Despachador de alto nivel con perfiles, rate limiting, firma opcional y OTel. |
+| **Perfiles** | `WEBHOOK_PROFILES` en `settings.py` — timeout, secret, headers y rate_limit por destino. |
+| **CanonicalEventEnvelope** | Helper Pydantic v2 (opcional) para eventos de primera clase. |
+| **System checks** | `manage.py check` valida `WEBHOOK_PROFILES` con IDs `webhooks.E001`–`E003`, `W001`–`W002`, `I001`. |
+| **OTel X-Trace-Id** | Inyección automática del trace ID activo (no-op si OTel no está instalado). |
+
 ## Objetivo
 
-Resolver de forma reusable el envio y recepcion de webhooks entre aplicaciones sin dispersar logica de seguridad, validacion y resiliencia.
+Resolver de forma reusable el envío y recepción de webhooks entre aplicaciones sin dispersar lógica de seguridad, validación y resiliencia.
 
 ## Modulos
 
 - `webhooks.core`
-  - registry de eventos
-  - registry de handlers
-  - firma HMAC y verificacion multi-secret
-  - metricas basicas
+  - registry de eventos y handlers
+  - firma HMAC y verificación multi-secret
+  - métricas básicas + export Prometheus
+  - **system checks** para `WEBHOOK_PROFILES`
 - `webhooks.producer`
   - outbox (`OutgoingEvent`)
-  - sender HTTP
+  - sender HTTP con **httpx** + OTel `X-Trace-Id`
+  - **`dispatch_webhook_sync()`** con perfiles, rate limit y señales
   - procesamiento async con retries no bloqueantes
 - `webhooks.receiver`
   - endpoint DRF protegido por API Key
-  - verificacion de firma (`Webhook-Signature`)
+  - verificación de firma (`Webhook-Signature`)
   - idempotencia, schema validation y dispatch
-  - rate limiting, DLQ y auditoria
+  - rate limiting, DLQ y auditoría
   - **Admin completo** (integraciones, secretos, event logs, dead letters, audit logs)
+- `webhooks.signals`
+  - `webhook_received`, `webhook_dispatched`, `webhook_failed`, `webhook_replayed`
+- `webhooks.contrib.pydantic`
+  - `CanonicalEventEnvelope` (requiere `pydantic>=2.0`)
 
 ## Instalacion
 
 Desde proyectos con `uv`, recomendado fijar por tag de Git:
 
 ```bash
-uv add "django-dumanity-webhooks @ git+https://github.com/dumanity/django-dumanity-webhooks.git@v1.1.0"
+uv add "django-dumanity-webhooks @ git+https://github.com/dumanity/django-dumanity-webhooks.git@v2.0.0"
 ```
 
 Instalación equivalente con `pip`:
 
 ```bash
-pip install "django-dumanity-webhooks @ git+https://github.com/dumanity/django-dumanity-webhooks.git@v1.1.0"
+pip install "django-dumanity-webhooks @ git+https://github.com/dumanity/django-dumanity-webhooks.git@v2.0.0"
 ```
 
 También puedes declararlo manualmente en `pyproject.toml` del consumidor:
@@ -74,13 +91,31 @@ INSTALLED_APPS += [
     "webhooks.producer",
     "webhooks.receiver",
 ]
+
+# Opcional pero recomendado: perfiles de webhook (resueltos por dispatch_webhook_sync)
+WEBHOOK_PROFILES = {
+    "default": {"timeout": 10},
+    "billing": {
+        "timeout": 30,
+        "secret": "whsec_...",              # firma HMAC para este destino
+        "headers": {"X-Source": "mi-app"},  # headers extra en cada request
+        "rate_limit": {"limit": 50, "window": 60},
+    },
+}
+
+# Cache necesario para rate limiting (LocMemCache para desarrollo, Redis para producción)
+CACHES = {
+    "default": {
+        "BACKEND": "django.core.cache.backends.locmem.LocMemCache",
+    }
+}
 ```
 
-Internamente, las apps usan labels unicos para evitar colisiones con paquetes comunes como `core` en proyectos consumidores.
+Internamente, las apps usan labels únicos para evitar colisiones con paquetes comunes como `core` en proyectos consumidores.
 
 ```bash
-python manage.py makemigrations
 python manage.py migrate
+python manage.py check  # verifica WEBHOOK_PROFILES automáticamente
 ```
 
 ## Quickstart en 10 minutos
@@ -204,7 +239,7 @@ Comportamiento:
 - Replay seguro (con trazabilidad): `python manage.py webhooks_replay --dead-letter-id <id> --endpoint-id <uuid> --reason "<motivo>" --dry-run`
 - Si ya hubo replay previo del mismo DLQ, se bloquea por defecto. Usa `--allow-previously-replayed` solo de forma excepcional y documentada.
 
-## Comandos de agilidad (v1.1.0)
+## Comandos de agilidad (v2.0.0)
 
 - Bootstrap inicial seguro (CLI o Admin):
   - `python manage.py webhooks_bootstrap`
@@ -216,6 +251,52 @@ Comportamiento:
   - `python manage.py webhooks_list_failures`
   - `python manage.py webhooks_replay ...`
   - Admin → Dead Letters → botón Replay (receiver)
+- System checks (nuevo en v2.0.0):
+  - `python manage.py check --tag webhooks`
+
+### Despachador sincrónico (nuevo en v2.0.0)
+
+```python
+from webhooks.producer.dispatch import dispatch_webhook_sync
+
+response = dispatch_webhook_sync(
+    payload={"id": str(uuid.uuid4()), "type": "orders.created.v1", "data": {...}},
+    target_url="https://partner.example.com/webhooks/",
+    profile="billing",       # resuelve timeout, secret, headers, rate_limit
+    correlation_id="req-01", # inyectado como X-Correlation-ID
+)
+```
+
+### Señales (nuevo en v2.0.0)
+
+```python
+from django.dispatch import receiver
+from webhooks.signals import webhook_dispatched, webhook_failed
+
+@receiver(webhook_dispatched)
+def on_dispatched(sender, *, target_url, event_id, status_code, latency_ms, **kwargs):
+    logger.info("Webhook entregado", extra={"status": status_code, "ms": latency_ms})
+
+@receiver(webhook_failed)
+def on_failed(sender, *, event_id, error, **kwargs):
+    alert_ops(f"Webhook {event_id} falló: {error}")
+```
+
+### CanonicalEventEnvelope (nuevo en v2.0.0)
+
+```bash
+pip install "django-dumanity-webhooks[pydantic]"
+```
+
+```python
+from webhooks.contrib.pydantic import CanonicalEventEnvelope
+
+envelope = CanonicalEventEnvelope(
+    type="orders.created.v1",
+    data={"order_id": "ord-123"},
+)
+dispatch_webhook_sync(envelope, "https://partner.example.com/webhooks/")
+```
 
 ## Para desarrolladores
 
