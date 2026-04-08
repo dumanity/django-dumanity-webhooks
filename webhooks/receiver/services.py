@@ -12,6 +12,7 @@ from webhooks.core.security import redact_headers
 from webhooks.core.verification import verify
 from webhooks.core.registry import get_event
 from webhooks.core.handlers import get_handler
+from webhooks.signals import webhook_failed, webhook_received
 
 from .models import AuditLog, DeadLetter, EventLog, Integration, Secret
 
@@ -84,10 +85,26 @@ class WebhookService:
             event_id = uuid.UUID(event_id_raw)
         except (ValueError, TypeError):
             inc("webhook.failed")
+            webhook_failed.send(
+                sender=WebhookService,
+                event_id=str(event_id_raw),
+                event_type=None,
+                target_url=None,
+                profile=None,
+                error="Invalid event id",
+            )
             raise Exception("Invalid event id")
 
         if not integration:
             inc("webhook.failed")
+            webhook_failed.send(
+                sender=WebhookService,
+                event_id=str(event_id_raw),
+                event_type=None,
+                target_url=None,
+                profile=None,
+                error="Integration not found",
+            )
             raise Exception("Integration not found")
 
         secrets = list(
@@ -107,6 +124,14 @@ class WebhookService:
 
         if not verify(secrets, sig, body):
             inc("webhook.failed")
+            webhook_failed.send(
+                sender=WebhookService,
+                event_id=str(event_id),
+                event_type=None,
+                target_url=None,
+                profile=None,
+                error="Invalid signature",
+            )
             raise Exception("Invalid signature")
 
         if EventLog.objects.filter(integration=integration, event_id=event_id).exists():
@@ -129,6 +154,14 @@ class WebhookService:
         event = get_event(payload["type"])
         if not event:
             inc("webhook.failed")
+            webhook_failed.send(
+                sender=WebhookService,
+                event_id=str(event_id),
+                event_type=payload.get("type"),
+                target_url=None,
+                profile=None,
+                error="Unknown event type",
+            )
             raise Exception("Unknown event type")
 
         validate(instance=payload["data"], schema=event["payload_schema"])
@@ -152,6 +185,14 @@ class WebhookService:
         except Exception as e:
             log.status = "failed"
             inc("webhook.failed")
+            webhook_failed.send(
+                sender=WebhookService,
+                event_id=str(event_id),
+                event_type=payload.get("type"),
+                target_url=None,
+                profile=None,
+                error=str(e),
+            )
             DeadLetter.objects.create(
                 payload=payload,
                 reason=str(e),
@@ -161,6 +202,15 @@ class WebhookService:
             )
 
         log.save()
+
+        if log.status == "processed":
+            webhook_received.send(
+                sender=WebhookService,
+                event_id=str(event_id),
+                event_type=payload.get("type"),
+                integration_name=integration.name,
+            )
+
         return "ok"
 
 

@@ -11,6 +11,13 @@ DATABASES = {
     }
 }
 
+# Cache en memoria para rate limiting en tests (sin dependencias externas)
+CACHES = {
+    "default": {
+        "BACKEND": "django.core.cache.backends.locmem.LocMemCache",
+    }
+}
+
 INSTALLED_APPS = [
     "django.contrib.admin",
     "django.contrib.auth",
@@ -48,3 +55,21 @@ TEMPLATES = [
 ]
 ROOT_URLCONF = "tests_urls"
 DEFAULT_AUTO_FIELD = "django.db.models.BigAutoField"
+
+# ──────────────────────────────────────────────────────────────────────────────
+# Perfiles de webhook para tests de v2.0.0
+# ──────────────────────────────────────────────────────────────────────────────
+WEBHOOK_PROFILES = {
+    "default": {
+        "timeout": 10,
+    },
+    "billing": {
+        "timeout": 30,
+        "secret": "whsec_billing_test_secret",
+        "headers": {"X-Source": "billing-service"},
+        "rate_limit": {"limit": 3, "window": 60},
+    },
+    "fast": {
+        "timeout": 2,
+    },
+}
