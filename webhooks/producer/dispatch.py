@@ -174,7 +174,12 @@ def _check_rate_limit(profile: str, config: dict[str, Any]) -> None:
             retry_after=window,
         )
 
-    # Incremento atómico: ``add`` crea la clave con TTL si no existe.
+    # Incremento semi-atómico: ``add`` crea la clave con TTL si no existe (operación
+    # atómica en la mayoría de backends).  Si ya existe, ``incr`` incrementa el valor.
+    # En escenarios de alta concurrencia (muchos procesos simultáneos cerca del límite)
+    # se puede superar el límite en 1-2 peticiones antes de que el check lo detecte.
+    # Para la mayoría de casos de uso esta precisión es suficiente; si se requiere
+    # límite estricto, apunta CACHES["default"] a Redis y usa un Lua script atómico.
     if not cache.add(cache_key, 1, timeout=window):
         cache.incr(cache_key)
 
@@ -184,15 +189,14 @@ def _serialize_payload(payload: Any) -> dict[str, Any]:
 
     Acepta tanto ``dict`` normales como instancias de ``CanonicalEventEnvelope``
     (o cualquier modelo Pydantic v2) sin necesidad de importar la clase.
-    Los campos ``datetime`` se convierten automáticamente a strings ISO 8601.
+
+    Usa ``model_dump(mode='json')`` de Pydantic v2, que serializa automáticamente
+    ``datetime``, ``UUID`` y otros tipos complejos en cualquier nivel de
+    anidamiento — incluyendo el campo ``data`` del envelope.
     """
     if hasattr(payload, "model_dump"):
-        data = payload.model_dump()
-        # Normalizar datetime → ISO 8601 para serialización JSON segura
-        for key, value in data.items():
-            if hasattr(value, "isoformat"):
-                data[key] = value.isoformat()
-        return data
+        # mode='json' convierte datetime/UUID a tipos JSON-nativos en todos los niveles
+        return payload.model_dump(mode="json")
     return dict(payload)
 
 

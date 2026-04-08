@@ -113,5 +113,7 @@ def send(
         endpoint.url,
         content=body,
         headers=headers,
+        # Usamos `is not None` (no `or`) para respetar timeout_override=0 como valor
+        # explícito válido (ej. en tests de integración sin timeout real).
         timeout=timeout_override if timeout_override is not None else endpoint.request_timeout_seconds,
     )

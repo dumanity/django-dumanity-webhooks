@@ -1883,9 +1883,11 @@ class WebhookSignalsTest(TestCase):
     """
 
     def setUp(self):
+        from django.core.cache import cache as django_cache
         from rest_framework_api_key.models import APIKey
         from webhooks.core.registry import register_event
 
+        django_cache.clear()
         self.api_key, self.raw_key = APIKey.objects.create_key(name="signals-test")
         self.integration = Integration.objects.create(
             name="signals-test",
@@ -2001,9 +2003,7 @@ class WebhookSignalsTest(TestCase):
         """webhook_dispatched se emite con target_url, event_id, status_code, latency_ms."""
         from webhooks.producer.dispatch import dispatch_webhook_sync
         from webhooks.signals import webhook_dispatched
-        from django.core.cache import cache as django_cache
 
-        django_cache.clear()
         dispatched_kwargs = {}
 
         def handler(sender, **kwargs):
@@ -2030,9 +2030,7 @@ class WebhookSignalsTest(TestCase):
         """latency_ms en webhook_dispatched es un float >= 0."""
         from webhooks.producer.dispatch import dispatch_webhook_sync
         from webhooks.signals import webhook_dispatched
-        from django.core.cache import cache as django_cache
 
-        django_cache.clear()
         latencies = []
 
         def handler(sender, **kwargs):
@@ -2057,10 +2055,8 @@ class WebhookSignalsTest(TestCase):
         """webhook_failed se emite cuando dispatch_webhook_sync falla por red."""
         from webhooks.producer.dispatch import dispatch_webhook_sync
         from webhooks.signals import webhook_failed
-        from django.core.cache import cache as django_cache
         import httpx as _httpx
 
-        django_cache.clear()
         failed_kwargs = {}
 
         def handler(sender, **kwargs):
