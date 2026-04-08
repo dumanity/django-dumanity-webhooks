@@ -40,8 +40,9 @@ class SecretInline(admin.TabularInline):
 
 @admin.register(Integration)
 class IntegrationAdmin(admin.ModelAdmin):
-    list_display = ("name", "active_secrets_count", "rotate_secret_link", "bootstrap_new_link")
+    list_display = ("name", "active_secrets_count", "rotate_secret_link")
     inlines = [SecretInline]
+    change_list_template = "admin/dumanity_webhooks_receiver/integration/change_list.html"
 
     def get_urls(self):
         urls = super().get_urls()
@@ -59,9 +60,13 @@ class IntegrationAdmin(admin.ModelAdmin):
         ]
         return custom_urls + urls
 
+    def changelist_view(self, request, extra_context=None):
+        extra_context = extra_context or {}
+        extra_context["bootstrap_url"] = reverse(f"admin:{_APP}_integration_bootstrap")
+        return super().changelist_view(request, extra_context=extra_context)
+
     @admin.display(description="Secretos activos")
-    def active_secrets_count(self, obj):
-        return Secret.objects.filter(
+    def active_secrets_count(self, obj):        return Secret.objects.filter(
             integration=obj,
             is_active=True,
             expires_at__gt=timezone.now(),
@@ -71,11 +76,6 @@ class IntegrationAdmin(admin.ModelAdmin):
     def rotate_secret_link(self, obj):
         url = reverse(f"admin:{_APP}_integration_rotate_secret", args=[obj.pk])
         return format_html('<a class="button" href="{}">Rotar secreto</a>', url)
-
-    @admin.display(description="Nueva integración")
-    def bootstrap_new_link(self, obj):
-        url = reverse(f"admin:{_APP}_integration_bootstrap")
-        return format_html('<a href="{}">Bootstrap</a>', url)
 
     def rotate_secret_view(self, request, integration_id):
         integration = get_object_or_404(Integration, pk=integration_id)

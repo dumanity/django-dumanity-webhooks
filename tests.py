@@ -1249,6 +1249,434 @@ class MetricsSecurityTest(TestCase):
         self.assertEqual(response.status_code, 403)
 
 
+# ---------------------------------------------------------------------------
+# bootstrap_receiver() service tests
+# ---------------------------------------------------------------------------
+
+class BootstrapReceiverServiceTest(TestCase):
+    """Valida la función bootstrap_receiver() de webhooks.receiver.services."""
+
+    def test_creates_integration_api_key_and_secret(self):
+        """bootstrap_receiver crea Integration, APIKey y Secret en una sola llamada."""
+        from webhooks.receiver.services import bootstrap_receiver
+
+        result = bootstrap_receiver("svc-a", shared_secret="whsec_test_svc_a", expires_days=7)
+
+        self.assertIsNotNone(result["integration"])
+        self.assertEqual(result["integration"].name, "svc-a")
+        self.assertIsNotNone(result["api_key_plaintext"])
+        self.assertEqual(result["secret"], "whsec_test_svc_a")
+        self.assertFalse(result["integration_reused"])
+        self.assertTrue(Integration.objects.filter(name="svc-a").exists())
+        self.assertTrue(
+            Secret.objects.filter(
+                integration=result["integration"],
+                secret="whsec_test_svc_a",
+                is_active=True,
+            ).exists()
+        )
+
+    def test_reuses_existing_integration(self):
+        """Si la integración ya existe, se reutiliza y no se crea otra APIKey."""
+        from webhooks.receiver.services import bootstrap_receiver
+
+        api_key_obj, _ = APIKey.objects.create_key(name="svc-b")
+        existing = Integration.objects.create(name="svc-b", api_key=api_key_obj)
+
+        result = bootstrap_receiver("svc-b", shared_secret="whsec_test_svc_b", expires_days=14)
+
+        self.assertTrue(result["integration_reused"])
+        self.assertIsNone(result["api_key_plaintext"])
+        self.assertEqual(result["integration"].pk, existing.pk)
+        self.assertEqual(Integration.objects.filter(name="svc-b").count(), 1)
+        self.assertTrue(
+            Secret.objects.filter(integration=existing, secret="whsec_test_svc_b").exists()
+        )
+
+    def test_auto_generates_secret_when_not_provided(self):
+        """Si no se pasa shared_secret, se genera automáticamente con prefijo whsec_."""
+        from webhooks.receiver.services import bootstrap_receiver
+
+        result = bootstrap_receiver("svc-c")
+
+        self.assertTrue(result["secret"].startswith("whsec_"))
+        self.assertTrue(
+            Secret.objects.filter(
+                integration=result["integration"],
+                secret=result["secret"],
+            ).exists()
+        )
+
+    def test_raises_on_invalid_expires_days(self):
+        """expires_days < 1 lanza ValueError."""
+        from webhooks.receiver.services import bootstrap_receiver
+
+        with self.assertRaises(ValueError):
+            bootstrap_receiver("svc-d", expires_days=0)
+
+    def test_secret_expiry_set_correctly(self):
+        """El secreto creado tiene expires_at aproximadamente en expires_days días."""
+        from django.utils.timezone import now
+        from webhooks.receiver.services import bootstrap_receiver
+
+        result = bootstrap_receiver("svc-e", shared_secret="whsec_expiry", expires_days=10)
+
+        secret = Secret.objects.get(integration=result["integration"], secret="whsec_expiry")
+        delta = secret.expires_at - now()
+        self.assertGreater(delta.days, 8)
+        self.assertLessEqual(delta.days, 10)
+
+
+# ---------------------------------------------------------------------------
+# Receiver admin tests
+# ---------------------------------------------------------------------------
+
+class ReceiverIntegrationAdminTest(TestCase):
+    """Valida vistas personalizadas de IntegrationAdmin."""
+
+    def setUp(self):
+        from django.contrib.auth.models import User
+        from webhooks.receiver.admin import IntegrationAdmin
+
+        self.factory = RequestFactory()
+        self.admin_user = User.objects.create_superuser(
+            username="admin_recv", email="admin@test.com", password="testpass"
+        )
+        self.model_admin = IntegrationAdmin(Integration, admin.site)
+
+    def _make_request(self, method="get", data=None):
+        fn = getattr(self.factory, method)
+        request = fn("/admin/", data=data or {})
+        request.user = self.admin_user
+        from django.contrib.sessions.backends.db import SessionStore
+        request.session = SessionStore()
+        from django.contrib.messages.storage.fallback import FallbackStorage
+        request._messages = FallbackStorage(request)
+        return request
+
+    def test_rotate_secret_creates_new_secret(self):
+        """rotate_secret_view crea un nuevo Secret activo para la integración."""
+        api_key_obj, _ = APIKey.objects.create_key(name="rotate-test")
+        integration = Integration.objects.create(name="rotate-test", api_key=api_key_obj)
+
+        response = self.model_admin.rotate_secret_view(self._make_request(), integration.pk)
+
+        self.assertEqual(response.status_code, 302)
+        self.assertEqual(Secret.objects.filter(integration=integration, is_active=True).count(), 1)
+        secret = Secret.objects.get(integration=integration)
+        self.assertTrue(secret.secret.startswith("whsec_"))
+        self.assertIsNotNone(secret.expires_at)
+
+    def test_rotate_secret_sends_warning_message(self):
+        """rotate_secret_view emite un mensaje WARNING con el nombre de integración."""
+        api_key_obj, _ = APIKey.objects.create_key(name="rotate-msg-test")
+        integration = Integration.objects.create(name="rotate-msg-test", api_key=api_key_obj)
+
+        with patch.object(self.model_admin, "message_user") as mock_msg:
+            self.model_admin.rotate_secret_view(self._make_request(), integration.pk)
+
+        mock_msg.assert_called_once()
+        self.assertIn("rotate-msg-test", mock_msg.call_args.args[1])
+        self.assertEqual(mock_msg.call_args.kwargs["level"], messages.WARNING)
+
+    def test_bootstrap_view_post_creates_integration(self):
+        """bootstrap_view POST crea integración y muestra API key en mensaje SUCCESS."""
+        with patch.object(self.model_admin, "message_user") as mock_msg:
+            response = self.model_admin.bootstrap_view(
+                self._make_request(
+                    "post",
+                    data={"integration_name": "bp-test", "shared_secret": "whsec_bp", "expires_days": "14"},
+                )
+            )
+
+        self.assertEqual(response.status_code, 302)
+        self.assertTrue(Integration.objects.filter(name="bp-test").exists())
+        mock_msg.assert_called_once()
+        self.assertEqual(mock_msg.call_args.kwargs["level"], messages.SUCCESS)
+
+    def test_bootstrap_view_post_reuse_sends_warning(self):
+        """bootstrap_view POST con integración existente emite mensaje WARNING."""
+        api_key_obj, _ = APIKey.objects.create_key(name="bp-reuse")
+        Integration.objects.create(name="bp-reuse", api_key=api_key_obj)
+
+        with patch.object(self.model_admin, "message_user") as mock_msg:
+            response = self.model_admin.bootstrap_view(
+                self._make_request("post", data={"integration_name": "bp-reuse", "shared_secret": "whsec_reuse2"})
+            )
+
+        self.assertEqual(response.status_code, 302)
+        self.assertEqual(Integration.objects.filter(name="bp-reuse").count(), 1)
+        mock_msg.assert_called_once()
+        self.assertEqual(mock_msg.call_args.kwargs["level"], messages.WARNING)
+
+    def test_bootstrap_view_post_empty_name_sends_error(self):
+        """bootstrap_view POST con nombre vacío emite ERROR y no crea nada."""
+        count_before = Integration.objects.count()
+
+        with patch.object(self.model_admin, "message_user") as mock_msg:
+            response = self.model_admin.bootstrap_view(
+                self._make_request("post", data={"integration_name": ""})
+            )
+
+        self.assertEqual(response.status_code, 302)
+        mock_msg.assert_called_once()
+        self.assertEqual(mock_msg.call_args.kwargs["level"], messages.ERROR)
+        self.assertEqual(Integration.objects.count(), count_before)
+
+
+class ReceiverSecretAdminTest(TestCase):
+    """Valida acciones de SecretAdmin."""
+
+    def setUp(self):
+        from django.contrib.auth.models import User
+        from webhooks.receiver.admin import SecretAdmin
+
+        self.factory = RequestFactory()
+        self.admin_user = User.objects.create_superuser(
+            username="admin_secret", email="s@test.com", password="testpass"
+        )
+        self.model_admin = SecretAdmin(Secret, admin.site)
+
+        api_key_obj, _ = APIKey.objects.create_key(name="secret-test")
+        self.integration = Integration.objects.create(name="secret-test", api_key=api_key_obj)
+
+    def _make_request(self):
+        request = self.factory.post("/admin/")
+        request.user = self.admin_user
+        from django.contrib.sessions.backends.db import SessionStore
+        request.session = SessionStore()
+        from django.contrib.messages.storage.fallback import FallbackStorage
+        request._messages = FallbackStorage(request)
+        return request
+
+    def test_deactivate_secrets_action(self):
+        """deactivate_secrets establece is_active=False en los seleccionados."""
+        s1 = Secret.objects.create(integration=self.integration, secret="whsec_s1", is_active=True)
+        s2 = Secret.objects.create(integration=self.integration, secret="whsec_s2", is_active=True)
+
+        with patch.object(self.model_admin, "message_user"):
+            self.model_admin.deactivate_secrets(
+                self._make_request(),
+                Secret.objects.filter(pk__in=[s1.pk, s2.pk]),
+            )
+
+        s1.refresh_from_db()
+        s2.refresh_from_db()
+        self.assertFalse(s1.is_active)
+        self.assertFalse(s2.is_active)
+
+    def test_secret_display_redacts_value(self):
+        """secret_display muestra solo los primeros 8 caracteres más [REDACTED]."""
+        secret = Secret(secret="whsec_abcdefghij1234")
+        display = self.model_admin.secret_display(secret)
+        self.assertIn("whsec_ab", display)
+        self.assertIn("[REDACTED]", display)
+        self.assertNotIn("abcdefghij1234", display)
+
+
+class ReceiverDeadLetterAdminTest(TestCase):
+    """Valida la vista de replay y la acción bulk de DeadLetterAdmin."""
+
+    def setUp(self):
+        from django.contrib.auth.models import User
+        from webhooks.receiver.admin import DeadLetterAdmin
+
+        self.factory = RequestFactory()
+        self.admin_user = User.objects.create_superuser(
+            username="admin_dl", email="dl@test.com", password="testpass"
+        )
+        self.model_admin = DeadLetterAdmin(DeadLetter, admin.site)
+
+        self.endpoint = WebhookEndpoint.objects.create(
+            name="dl-endpoint",
+            url="https://example.com/dl-webhook",
+            secret="whsec_dl",
+            is_active=True,
+        )
+        self.payload = {
+            "id": str(uuid.uuid4()),
+            "type": "orders.created.v1",
+            "data": {"id": "o-dl-1"},
+        }
+        self.dead_letter = DeadLetter.objects.create(
+            payload=self.payload,
+            reason="handler boom",
+            retries=1,
+        )
+
+    def _make_post_request(self, data):
+        request = self.factory.post("/admin/", data=data)
+        request.user = self.admin_user
+        from django.contrib.sessions.backends.db import SessionStore
+        request.session = SessionStore()
+        from django.contrib.messages.storage.fallback import FallbackStorage
+        request._messages = FallbackStorage(request)
+        return request
+
+    def test_replay_view_post_enqueues_event_and_marks_dead_letter(self):
+        """replay_view POST encola un OutgoingEvent y marca el DeadLetter como replayado."""
+        with patch.object(self.model_admin, "message_user") as mock_msg:
+            response = self.model_admin.replay_view(
+                self._make_post_request({
+                    "endpoint_id": str(self.endpoint.id),
+                    "reason": "handler fixed",
+                    "new_event_id": "1",
+                }),
+                self.dead_letter.id,
+            )
+
+        self.assertEqual(response.status_code, 302)
+        self.dead_letter.refresh_from_db()
+        self.assertIsNotNone(self.dead_letter.replayed_at)
+        self.assertEqual(self.dead_letter.replay_reason, "handler fixed")
+        self.assertIsNotNone(self.dead_letter.replay_event_id)
+
+        event = OutgoingEvent.objects.filter(endpoint=self.endpoint).first()
+        self.assertIsNotNone(event)
+        self.assertEqual(event.status, "pending")
+        mock_msg.assert_called_once()
+        self.assertEqual(mock_msg.call_args.kwargs["level"], messages.SUCCESS)
+
+    def test_replay_view_post_blocks_already_replayed(self):
+        """replay_view POST rechaza un DeadLetter que ya fue replayado."""
+        from django.utils.timezone import now
+        self.dead_letter.replayed_at = now()
+        self.dead_letter.replay_reason = "first replay"
+        self.dead_letter.save()
+
+        with patch.object(self.model_admin, "message_user") as mock_msg:
+            response = self.model_admin.replay_view(
+                self._make_post_request({
+                    "endpoint_id": str(self.endpoint.id),
+                    "reason": "second try",
+                    "new_event_id": "1",
+                }),
+                self.dead_letter.id,
+            )
+
+        self.assertEqual(response.status_code, 302)
+        mock_msg.assert_called_once()
+        self.assertEqual(mock_msg.call_args.kwargs["level"], messages.ERROR)
+        self.assertEqual(OutgoingEvent.objects.filter(endpoint=self.endpoint).count(), 0)
+
+    def test_replay_view_post_missing_reason_sends_error(self):
+        """replay_view POST sin motivo emite ERROR y no encola nada."""
+        with patch.object(self.model_admin, "message_user") as mock_msg:
+            response = self.model_admin.replay_view(
+                self._make_post_request({"endpoint_id": str(self.endpoint.id), "reason": ""}),
+                self.dead_letter.id,
+            )
+
+        self.assertEqual(response.status_code, 302)
+        mock_msg.assert_called_once()
+        self.assertEqual(mock_msg.call_args.kwargs["level"], messages.ERROR)
+        self.assertEqual(OutgoingEvent.objects.filter(endpoint=self.endpoint).count(), 0)
+
+    def test_replay_view_post_blocks_duplicate_outbox_id(self):
+        """replay_view POST bloquea si el event_id original ya existe en el outbox."""
+        OutgoingEvent.objects.create(
+            endpoint=self.endpoint,
+            payload=self.payload,
+            status="pending",
+        )
+
+        with patch.object(self.model_admin, "message_user") as mock_msg:
+            response = self.model_admin.replay_view(
+                self._make_post_request({
+                    "endpoint_id": str(self.endpoint.id),
+                    "reason": "replay with same id",
+                    # new_event_id NOT sent → uses original ID
+                }),
+                self.dead_letter.id,
+            )
+
+        self.assertEqual(response.status_code, 302)
+        mock_msg.assert_called_once()
+        self.assertEqual(mock_msg.call_args.kwargs["level"], messages.ERROR)
+
+    def test_replay_to_outbox_action_enqueues_unplayed_skips_replayed(self):
+        """replay_to_outbox encola solo DeadLetters sin replay previo."""
+        from django.utils.timezone import now
+
+        already_replayed = DeadLetter.objects.create(
+            payload={
+                "id": str(uuid.uuid4()),
+                "type": "orders.created.v1",
+                "data": {"id": "o-dl-2"},
+            },
+            reason="already done",
+            retries=1,
+            replayed_at=now(),
+            replay_reason="previous replay",
+        )
+
+        with patch.object(self.model_admin, "message_user") as mock_msg:
+            self.model_admin.replay_to_outbox(
+                self._make_post_request({}),
+                DeadLetter.objects.filter(pk__in=[self.dead_letter.pk, already_replayed.pk]),
+            )
+
+        mock_msg.assert_called_once()
+        msg_text = mock_msg.call_args.args[1]
+        self.assertIn("1 evento(s) replayado(s)", msg_text)
+        self.assertIn("1 omitido(s)", msg_text)
+        self.dead_letter.refresh_from_db()
+        self.assertIsNotNone(self.dead_letter.replayed_at)
+
+    def test_replay_to_outbox_action_requires_active_endpoint(self):
+        """replay_to_outbox emite ERROR si no hay endpoints activos."""
+        self.endpoint.is_active = False
+        self.endpoint.save()
+
+        with patch.object(self.model_admin, "message_user") as mock_msg:
+            self.model_admin.replay_to_outbox(
+                self._make_post_request({}),
+                DeadLetter.objects.filter(pk=self.dead_letter.pk),
+            )
+
+        mock_msg.assert_called_once()
+        self.assertEqual(mock_msg.call_args.kwargs["level"], messages.ERROR)
+
+
+class ReceiverAdminReadonlyModelsTest(TestCase):
+    """Valida que EventLog y AuditLog son inmutables desde el admin."""
+
+    def setUp(self):
+        from django.contrib.auth.models import User
+        from webhooks.receiver.admin import AuditLogAdmin, EventLogAdmin
+        from webhooks.receiver.models import AuditLog
+
+        self.factory = RequestFactory()
+        self.admin_user = User.objects.create_superuser(
+            username="admin_ro", email="ro@test.com", password="testpass"
+        )
+        self.eventlog_admin = EventLogAdmin(EventLog, admin.site)
+        self.auditlog_admin = AuditLogAdmin(AuditLog, admin.site)
+
+    def _req(self):
+        r = self.factory.get("/admin/")
+        r.user = self.admin_user
+        return r
+
+    def test_eventlog_has_no_add_permission(self):
+        self.assertFalse(self.eventlog_admin.has_add_permission(self._req()))
+
+    def test_eventlog_has_no_change_permission(self):
+        self.assertFalse(self.eventlog_admin.has_change_permission(self._req()))
+
+    def test_eventlog_has_no_delete_permission(self):
+        self.assertFalse(self.eventlog_admin.has_delete_permission(self._req()))
+
+    def test_auditlog_has_no_add_permission(self):
+        self.assertFalse(self.auditlog_admin.has_add_permission(self._req()))
+
+    def test_auditlog_has_no_change_permission(self):
+        self.assertFalse(self.auditlog_admin.has_change_permission(self._req()))
+
+    def test_auditlog_has_no_delete_permission(self):
+        self.assertFalse(self.auditlog_admin.has_delete_permission(self._req()))
+
+
 if __name__ == "__main__":
     import unittest
     unittest.main()

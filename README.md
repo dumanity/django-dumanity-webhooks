@@ -29,6 +29,7 @@ Resolver de forma reusable el envio y recepcion de webhooks entre aplicaciones s
   - verificacion de firma (`Webhook-Signature`)
   - idempotencia, schema validation y dispatch
   - rate limiting, DLQ y auditoria
+  - **Admin completo** (integraciones, secretos, event logs, dead letters, audit logs)
 
 ## Instalacion
 
@@ -84,8 +85,10 @@ python manage.py migrate
 
 ## Quickstart en 10 minutos
 
-- `docs/quickstart.md`
-- Incluye bootstrap automático, primer evento end-to-end y troubleshooting.
+Ver `docs/quickstart.md` — incluye:
+- Diagrama Producer / Receiver con roles explícitos
+- Configuración desde **Django Admin** (recomendado) y desde CLI
+- Bootstrap automático, prueba de conexión, primer evento end-to-end y troubleshooting
 
 ## Documentacion principal
 
@@ -187,6 +190,12 @@ Comportamiento:
 
 ## Operacion
 
+**Desde Django Admin (Receiver):**
+- **Integraciones** → bootstrap y gestión de secretos
+- **Dead Letters** → replay individual o en bulk con trazabilidad
+- **Event Logs / Audit Logs** → solo lectura, búsqueda por event_id / correlation_id
+
+**Desde CLI:**
 - Worker async: `python manage.py runworker`
 - Revisar periodicamente `OutgoingEvent` con status `failed`
 - Monitorear `DeadLetter` y `AuditLog`
@@ -197,13 +206,16 @@ Comportamiento:
 
 ## Comandos de agilidad (v1.1.0)
 
-- Bootstrap inicial seguro:
+- Bootstrap inicial seguro (CLI o Admin):
   - `python manage.py webhooks_bootstrap`
+  - Admin → Integraciones → "Bootstrap nueva integración" (receiver)
+  - Admin → Webhook Endpoints → Añadir (producer)
 - Validación de contratos:
   - `python manage.py webhooks_validate_contracts`
 - Operación:
   - `python manage.py webhooks_list_failures`
   - `python manage.py webhooks_replay ...`
+  - Admin → Dead Letters → botón Replay (receiver)
 
 ## Para desarrolladores
 

@@ -1,0 +1,80 @@
+{% extends "admin/base_site.html" %}
+{% load i18n %}
+
+{% block title %}{% trans "Bootstrap nueva integración" %} | {{ block.super }}{% endblock %}
+
+{% block breadcrumbs %}
+<div class="breadcrumbs">
+    <a href="{% url 'admin:index' %}">{% trans "Inicio" %}</a>
+    &rsaquo; <a href="{% url 'admin:dumanity_webhooks_receiver_integration_changelist' %}">{% trans "Integraciones" %}</a>
+    &rsaquo; {% trans "Bootstrap nueva integración" %}
+</div>
+{% endblock %}
+
+{% block content %}
+<h1>{% trans "Bootstrap nueva integración (Receiver)" %}</h1>
+
+<div class="help">
+    <p>
+        Crea una <strong>Integration</strong> (identifica al producer remoto) con su <strong>API Key</strong>
+        y un <strong>Secret HMAC</strong> inicial.<br>
+        La API Key se muestra <strong>una sola vez</strong> al crear — guárdala en tu vault de inmediato.
+    </p>
+    <p>
+        Si la integración ya existe, se reutiliza y se añade un nuevo secreto para rotación segura.
+    </p>
+</div>
+
+<form method="post">
+    {% csrf_token %}
+
+    <fieldset class="module aligned">
+        <div class="form-row">
+            <div>
+                <label class="required" for="id_integration_name">{% trans "Nombre de integración" %}:</label>
+                <input type="text"
+                       id="id_integration_name"
+                       name="integration_name"
+                       maxlength="100"
+                       required
+                       placeholder="ej: producer-a">
+                <p class="help">Nombre descriptivo del producer remoto (ej: «billing-service», «app-a»).</p>
+            </div>
+        </div>
+
+        <div class="form-row">
+            <div>
+                <label for="id_shared_secret">{% trans "Shared secret (HMAC)" %}:</label>
+                <input type="text"
+                       id="id_shared_secret"
+                       name="shared_secret"
+                       maxlength="255"
+                       placeholder="whsec_… (vacío = se genera automáticamente)">
+                <p class="help">
+                    Secreto HMAC compartido con el producer para verificar firmas.
+                    Si lo dejas vacío se genera uno seguro automáticamente.
+                </p>
+            </div>
+        </div>
+
+        <div class="form-row">
+            <div>
+                <label for="id_expires_days">{% trans "Expiración del secreto (días)" %}:</label>
+                <input type="number"
+                       id="id_expires_days"
+                       name="expires_days"
+                       value="30"
+                       min="1">
+                <p class="help">Días hasta que expira el secreto creado. Mínimo 1.</p>
+            </div>
+        </div>
+    </fieldset>
+
+    <div class="submit-row">
+        <input type="submit" value="{% trans "Crear integración" %}" class="default">
+        <a href="{% url 'admin:dumanity_webhooks_receiver_integration_changelist' %}" class="closelink">
+            {% trans "Cancelar" %}
+        </a>
+    </div>
+</form>
+{% endblock %}

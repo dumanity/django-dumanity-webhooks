@@ -41,6 +41,13 @@ Documentacion tecnica para desarrolladores del framework y mantenedores.
 	- rate limiting por integracion
 - `services.py`
 	- pipeline de verificacion, validacion, idempotencia y dispatch
+	- `bootstrap_receiver()`: crea Integration + APIKey + Secret en una llamada (usada por CLI y Admin)
+- `admin.py`
+	- `IntegrationAdmin`: lista, bootstrap desde Admin, rotación de secreto por fila
+	- `SecretAdmin`: vista parcial (redactada), desactivación bulk
+	- `EventLogAdmin`: solo lectura, busqueda por event_id/correlation_id
+	- `DeadLetterAdmin`: replay individual con form + replay bulk; bloqueo anti-doble-replay
+	- `AuditLogAdmin`: solo lectura, busqueda por event_id/correlation_id
 - `rate_limit.py`
 	- helper de rate limiting basado en cache
 
