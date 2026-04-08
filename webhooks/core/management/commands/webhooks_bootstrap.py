@@ -1,14 +1,9 @@
 from __future__ import annotations
 
-import secrets
-from datetime import timedelta
-
 from django.core.management.base import BaseCommand, CommandError
-from django.utils.timezone import now
-from rest_framework_api_key.models import APIKey
 
 from webhooks.producer.models import WebhookEndpoint
-from webhooks.receiver.models import Integration, Secret
+from webhooks.receiver.services import bootstrap_receiver
 
 
 class Command(BaseCommand):
@@ -39,54 +34,42 @@ class Command(BaseCommand):
         if options["expires_days"] <= 0:
             raise CommandError("--expires-days must be >= 1")
 
-        shared_secret = options["secret"] or f"whsec_{secrets.token_urlsafe(24)}"
-        expires_at = now() + timedelta(days=options["expires_days"])
-
         create_receiver = not producer_only
         create_producer = not receiver_only
 
-        created = {
+        result = {
             "integration": None,
-            "api_key": None,
-            "secret": shared_secret,
+            "api_key_plaintext": None,
+            "secret": options["secret"],
             "endpoint": None,
             "integration_reused": False,
             "endpoint_reused": False,
         }
 
         if create_receiver:
-            existing_integration = Integration.objects.filter(name=options["integration_name"]).first()
-
             if dry_run:
-                if existing_integration:
-                    self.stdout.write(
-                        f"[dry-run] receiver integration='{options['integration_name']}' (existing) secret_expires_at='{expires_at.isoformat()}'"
-                    )
-                else:
-                    self.stdout.write(
-                        f"[dry-run] receiver integration='{options['integration_name']}' (new) secret_expires_at='{expires_at.isoformat()}'"
-                    )
-            else:
-                if existing_integration:
-                    integration = existing_integration
-                    created["integration_reused"] = True
-                else:
-                    api_key_obj, plaintext = APIKey.objects.create_key(name=options["integration_name"])
-                    integration = Integration.objects.create(
-                        name=options["integration_name"],
-                        api_key=api_key_obj,
-                    )
-                    created["api_key"] = plaintext
-
-                Secret.objects.create(
-                    integration=integration,
-                    secret=shared_secret,
-                    is_active=True,
-                    expires_at=expires_at,
+                from webhooks.receiver.models import Integration
+                from django.utils.timezone import now
+                from datetime import timedelta
+                existing_integration = Integration.objects.filter(name=options["integration_name"]).first()
+                expires_at = now() + timedelta(days=options["expires_days"])
+                label = "existing" if existing_integration else "new"
+                self.stdout.write(
+                    f"[dry-run] receiver integration='{options['integration_name']}' ({label}) secret_expires_at='{expires_at.isoformat()}'"
                 )
-                created["integration"] = integration
+            else:
+                bootstrap_result = bootstrap_receiver(
+                    integration_name=options["integration_name"],
+                    shared_secret=options["secret"],
+                    expires_days=options["expires_days"],
+                )
+                result["integration"] = bootstrap_result["integration"]
+                result["api_key_plaintext"] = bootstrap_result["api_key_plaintext"]
+                result["secret"] = bootstrap_result["secret"]
+                result["integration_reused"] = bootstrap_result["integration_reused"]
 
         if create_producer:
+            shared_secret = result["secret"]
             if dry_run:
                 self.stdout.write(
                     f"[dry-run] producer endpoint='{options['endpoint_name']}' url='{options['endpoint_url']}'"
@@ -101,28 +84,28 @@ class Command(BaseCommand):
                     },
                 )
                 if not endpoint_created:
-                    created["endpoint_reused"] = True
+                    result["endpoint_reused"] = True
                     if options["update_endpoint"]:
                         endpoint.url = options["endpoint_url"]
                         endpoint.secret = shared_secret
                         endpoint.is_active = True
                         endpoint.save(update_fields=["url", "secret", "is_active"])
-                created["endpoint"] = endpoint
+                result["endpoint"] = endpoint
 
         status = "Bootstrap completed (dry-run)." if dry_run else "Bootstrap completed."
         self.stdout.write(self.style.SUCCESS(status))
         self.stdout.write("Store these values in your vault (do NOT commit):")
-        self.stdout.write(f"- WEBHOOK_SHARED_SECRET: {shared_secret}")
-        if created["api_key"]:
-            self.stdout.write(f"- RECEIVER_API_KEY: {created['api_key']}")
+        self.stdout.write(f"- WEBHOOK_SHARED_SECRET: {result['secret']}")
+        if result["api_key_plaintext"]:
+            self.stdout.write(f"- RECEIVER_API_KEY: {result['api_key_plaintext']}")
             self.stdout.write("  (shown once; rotate if exposed)")
-        elif created["integration_reused"]:
+        elif result["integration_reused"]:
             self.stdout.write("- RECEIVER_API_KEY: [existing integration reused; plaintext key cannot be recovered]")
             self.stdout.write("  Action: rotate/create key if you do not have it stored in vault.")
         else:
             self.stdout.write("- RECEIVER_API_KEY: [not generated in this mode]")
 
-        if created["endpoint_reused"] and not options["update_endpoint"]:
+        if result["endpoint_reused"] and not options["update_endpoint"]:
             self.stdout.write("- ENDPOINT_UPDATE: skipped (existing endpoint kept unchanged)")
             self.stdout.write("  Tip: rerun with --update-endpoint to align URL/secret.")
         self.stdout.write("")
