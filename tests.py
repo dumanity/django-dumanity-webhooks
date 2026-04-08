@@ -1868,3 +1868,573 @@ class AdminE2EReplayTest(TestCase):
 if __name__ == "__main__":
     import unittest
     unittest.main()
+
+
+# ══════════════════════════════════════════════════════════════════════════════
+# v2.0.0 — Nuevas capacidades: señales, dispatch, Pydantic, system checks
+# ══════════════════════════════════════════════════════════════════════════════
+
+
+class WebhookSignalsTest(TestCase):
+    """Verifica que las señales de ciclo de vida se emiten con los kwargs correctos.
+
+    Las señales son el mecanismo de observabilidad sin acoplamiento del paquete.
+    Nunca exponen secretos en sus kwargs.
+    """
+
+    def setUp(self):
+        from rest_framework_api_key.models import APIKey
+        from webhooks.core.registry import register_event
+
+        self.api_key, self.raw_key = APIKey.objects.create_key(name="signals-test")
+        self.integration = Integration.objects.create(
+            name="signals-test",
+            api_key=self.api_key,
+        )
+        self.secret_value = "sig-test-secret-xyz"
+        Secret.objects.create(
+            integration=self.integration,
+            secret=self.secret_value,
+            is_active=True,
+        )
+        register_event({
+            "type": "signals.demo.v1",
+            "payload_schema": {
+                "type": "object",
+                "properties": {"demo_id": {"type": "string"}},
+            },
+        })
+        self.factory = APIRequestFactory()
+
+    def _signed_request(self, payload, secret=None):
+        """Construye un request firmado correctamente para el receiver."""
+        body = json.dumps(payload).encode()
+        ts = str(int(time.time()))
+        sig = sign(secret or self.secret_value, ts, body)
+        return self.factory.post(
+            "/webhooks/",
+            data=body,
+            content_type="application/json",
+            HTTP_WEBHOOK_SIGNATURE=sig,
+            HTTP_X_EVENT_ID=payload["id"],
+        )
+
+    def test_webhook_received_fires_on_successful_processing(self):
+        """webhook_received se emite con event_id, event_type e integration_name."""
+        from webhooks.signals import webhook_received
+
+        received_kwargs = {}
+
+        def handler(sender, **kwargs):
+            received_kwargs.update(kwargs)
+
+        webhook_received.connect(handler)
+        try:
+            payload = {
+                "id": str(uuid.uuid4()),
+                "type": "signals.demo.v1",
+                "data": {"demo_id": "001"},
+            }
+            request = self._signed_request(payload)
+            WebhookService.process(request, integration=self.integration)
+        finally:
+            webhook_received.disconnect(handler)
+
+        self.assertIn("event_id", received_kwargs)
+        self.assertEqual(received_kwargs["event_type"], "signals.demo.v1")
+        self.assertEqual(received_kwargs["integration_name"], "signals-test")
+
+    def test_webhook_failed_fires_on_invalid_signature(self):
+        """webhook_failed se emite cuando la firma HMAC no es válida."""
+        from webhooks.signals import webhook_failed
+
+        failed_kwargs = {}
+
+        def handler(sender, **kwargs):
+            failed_kwargs.update(kwargs)
+
+        webhook_failed.connect(handler)
+        try:
+            payload = {
+                "id": str(uuid.uuid4()),
+                "type": "signals.demo.v1",
+                "data": {"demo_id": "002"},
+            }
+            request = self._signed_request(payload, secret="wrong-secret")
+            with self.assertRaises(Exception):
+                WebhookService.process(request, integration=self.integration)
+        finally:
+            webhook_failed.disconnect(handler)
+
+        self.assertIn("error", failed_kwargs)
+        self.assertIn("Invalid signature", failed_kwargs["error"])
+
+    def test_webhook_failed_fires_on_invalid_event_id(self):
+        """webhook_failed se emite cuando X-Event-ID no es un UUID válido."""
+        from webhooks.signals import webhook_failed
+
+        failed_kwargs = {}
+
+        def handler(sender, **kwargs):
+            failed_kwargs.update(kwargs)
+
+        webhook_failed.connect(handler)
+        try:
+            body = b'{"id": "bad", "type": "signals.demo.v1", "data": {}}'
+            ts = str(int(time.time()))
+            sig = sign(self.secret_value, ts, body)
+            request = self.factory.post(
+                "/webhooks/",
+                data=body,
+                content_type="application/json",
+                HTTP_WEBHOOK_SIGNATURE=sig,
+                HTTP_X_EVENT_ID="not-a-uuid",
+            )
+            with self.assertRaises(Exception):
+                WebhookService.process(request, integration=self.integration)
+        finally:
+            webhook_failed.disconnect(handler)
+
+        self.assertIn("Invalid event id", failed_kwargs.get("error", ""))
+
+    def test_webhook_dispatched_fires_with_correct_kwargs(self):
+        """webhook_dispatched se emite con target_url, event_id, status_code, latency_ms."""
+        from webhooks.producer.dispatch import dispatch_webhook_sync
+        from webhooks.signals import webhook_dispatched
+        from django.core.cache import cache as django_cache
+
+        django_cache.clear()
+        dispatched_kwargs = {}
+
+        def handler(sender, **kwargs):
+            dispatched_kwargs.update(kwargs)
+
+        webhook_dispatched.connect(handler)
+        try:
+            with patch("webhooks.producer.dispatch.httpx.post") as mock_post:
+                mock_post.return_value = Mock(status_code=200)
+                dispatch_webhook_sync(
+                    payload={"id": str(uuid.uuid4()), "type": "orders.v1", "data": {}},
+                    target_url="https://example.com/wh/",
+                    profile="default",
+                )
+        finally:
+            webhook_dispatched.disconnect(handler)
+
+        self.assertEqual(dispatched_kwargs["target_url"], "https://example.com/wh/")
+        self.assertEqual(dispatched_kwargs["status_code"], 200)
+        self.assertGreaterEqual(dispatched_kwargs["latency_ms"], 0)
+        self.assertEqual(dispatched_kwargs["profile"], "default")
+
+    def test_webhook_dispatched_includes_positive_latency_ms(self):
+        """latency_ms en webhook_dispatched es un float >= 0."""
+        from webhooks.producer.dispatch import dispatch_webhook_sync
+        from webhooks.signals import webhook_dispatched
+        from django.core.cache import cache as django_cache
+
+        django_cache.clear()
+        latencies = []
+
+        def handler(sender, **kwargs):
+            latencies.append(kwargs.get("latency_ms"))
+
+        webhook_dispatched.connect(handler)
+        try:
+            with patch("webhooks.producer.dispatch.httpx.post") as mock_post:
+                mock_post.return_value = Mock(status_code=201)
+                dispatch_webhook_sync(
+                    payload={"id": str(uuid.uuid4()), "type": "t.v1", "data": {}},
+                    target_url="https://example.com/wh/",
+                )
+        finally:
+            webhook_dispatched.disconnect(handler)
+
+        self.assertEqual(len(latencies), 1)
+        self.assertIsInstance(latencies[0], float)
+        self.assertGreaterEqual(latencies[0], 0.0)
+
+    def test_webhook_failed_fires_on_dispatch_transport_error(self):
+        """webhook_failed se emite cuando dispatch_webhook_sync falla por red."""
+        from webhooks.producer.dispatch import dispatch_webhook_sync
+        from webhooks.signals import webhook_failed
+        from django.core.cache import cache as django_cache
+        import httpx as _httpx
+
+        django_cache.clear()
+        failed_kwargs = {}
+
+        def handler(sender, **kwargs):
+            failed_kwargs.update(kwargs)
+
+        webhook_failed.connect(handler)
+        try:
+            with patch("webhooks.producer.dispatch.httpx.post") as mock_post:
+                mock_post.side_effect = _httpx.ConnectError("timeout")
+                with self.assertRaises(_httpx.ConnectError):
+                    dispatch_webhook_sync(
+                        payload={"id": str(uuid.uuid4()), "type": "t.v1", "data": {}},
+                        target_url="https://example.com/wh/",
+                    )
+        finally:
+            webhook_failed.disconnect(handler)
+
+        self.assertIn("timeout", failed_kwargs.get("error", ""))
+        self.assertEqual(failed_kwargs["target_url"], "https://example.com/wh/")
+
+    def test_webhook_replayed_fires_on_successful_replay(self):
+        """webhook_replayed se emite tras encolar un replay en el outbox."""
+        from webhooks.signals import webhook_replayed
+        from webhooks.producer.models import WebhookEndpoint
+
+        endpoint = WebhookEndpoint.objects.create(
+            name="signals-ep",
+            url="https://example.com/",
+            secret="whsec_sig_test",
+            is_active=True,
+        )
+        dead_letter = DeadLetter.objects.create(
+            payload={
+                "id": str(uuid.uuid4()),
+                "type": "signals.demo.v1",
+                "data": {"demo_id": "003"},
+            },
+            reason="test replay signal",
+            retries=1,
+        )
+
+        replayed_kwargs = {}
+
+        def handler(sender, **kwargs):
+            replayed_kwargs.update(kwargs)
+
+        webhook_replayed.connect(handler)
+        try:
+            call_command(
+                "webhooks_replay",
+                dead_letter_id=dead_letter.id,
+                endpoint_id=str(endpoint.id),
+                reason="testing signal emission",
+            )
+        finally:
+            webhook_replayed.disconnect(handler)
+
+        self.assertEqual(replayed_kwargs["dead_letter_id"], dead_letter.id)
+        self.assertEqual(replayed_kwargs["endpoint_name"], "signals-ep")
+        self.assertIn("replay_event_id", replayed_kwargs)
+
+
+class DispatchWebhookSyncTest(TestCase):
+    """Verifica el despachador sincrónico de alto nivel con perfiles configurables.
+
+    ``dispatch_webhook_sync`` es el punto de entrada recomendado cuando no se
+    usa el patrón Outbox (ej. webhooks síncronos hacia terceros).
+    """
+
+    def setUp(self):
+        from django.core.cache import cache as django_cache
+        django_cache.clear()
+
+    def tearDown(self):
+        from django.core.cache import cache as django_cache
+        django_cache.clear()
+
+    def test_happy_path_posts_and_returns_response(self):
+        """dispatch_webhook_sync hace POST y retorna la respuesta httpx."""
+        from webhooks.producer.dispatch import dispatch_webhook_sync
+
+        with patch("webhooks.producer.dispatch.httpx.post") as mock_post:
+            mock_post.return_value = Mock(status_code=200)
+            response = dispatch_webhook_sync(
+                payload={"id": str(uuid.uuid4()), "type": "orders.v1", "data": {}},
+                target_url="https://example.com/wh/",
+            )
+
+        self.assertEqual(response.status_code, 200)
+        mock_post.assert_called_once()
+
+    def test_uses_profile_timeout_from_settings(self):
+        """El timeout se resuelve desde WEBHOOK_PROFILES[profile]['timeout']."""
+        from webhooks.producer.dispatch import dispatch_webhook_sync
+
+        with patch("webhooks.producer.dispatch.httpx.post") as mock_post:
+            mock_post.return_value = Mock(status_code=200)
+            dispatch_webhook_sync(
+                payload={"id": str(uuid.uuid4()), "type": "orders.v1", "data": {}},
+                target_url="https://example.com/wh/",
+                profile="fast",
+            )
+
+        # El perfil "fast" tiene timeout=2 en tests_settings.py
+        self.assertEqual(mock_post.call_args.kwargs["timeout"], 2)
+
+    def test_uses_default_timeout_when_profile_not_configured(self):
+        """Perfil inexistente usa timeout=10 por defecto."""
+        from webhooks.producer.dispatch import dispatch_webhook_sync
+
+        with patch("webhooks.producer.dispatch.httpx.post") as mock_post:
+            mock_post.return_value = Mock(status_code=200)
+            dispatch_webhook_sync(
+                payload={"id": str(uuid.uuid4()), "type": "orders.v1", "data": {}},
+                target_url="https://example.com/wh/",
+                profile="unknown_profile",
+            )
+
+        self.assertEqual(mock_post.call_args.kwargs["timeout"], 10)
+
+    def test_signs_payload_when_profile_has_secret(self):
+        """Se añade Webhook-Signature cuando el perfil tiene secret configurado."""
+        from webhooks.producer.dispatch import dispatch_webhook_sync
+
+        with patch("webhooks.producer.dispatch.httpx.post") as mock_post:
+            mock_post.return_value = Mock(status_code=200)
+            dispatch_webhook_sync(
+                payload={"id": str(uuid.uuid4()), "type": "orders.v1", "data": {}},
+                target_url="https://example.com/wh/",
+                profile="billing",
+            )
+
+        sent_headers = mock_post.call_args.kwargs["headers"]
+        self.assertIn("Webhook-Signature", sent_headers)
+        self.assertTrue(sent_headers["Webhook-Signature"].startswith("t="))
+
+    def test_no_signature_when_profile_has_no_secret(self):
+        """Sin secret en el perfil, no se añade Webhook-Signature al request."""
+        from webhooks.producer.dispatch import dispatch_webhook_sync
+
+        with patch("webhooks.producer.dispatch.httpx.post") as mock_post:
+            mock_post.return_value = Mock(status_code=200)
+            dispatch_webhook_sync(
+                payload={"id": str(uuid.uuid4()), "type": "orders.v1", "data": {}},
+                target_url="https://example.com/wh/",
+                profile="default",
+            )
+
+        sent_headers = mock_post.call_args.kwargs["headers"]
+        self.assertNotIn("Webhook-Signature", sent_headers)
+
+    def test_rate_limit_exceeded_raises_before_io(self):
+        """RateLimitExceeded se lanza sin hacer ningún POST HTTP."""
+        from webhooks.producer.dispatch import dispatch_webhook_sync, RateLimitExceeded
+
+        # El perfil "billing" tiene limit=3 en tests_settings.py
+        with patch("webhooks.producer.dispatch.httpx.post") as mock_post:
+            mock_post.return_value = Mock(status_code=200)
+            for _ in range(3):
+                dispatch_webhook_sync(
+                    payload={"id": str(uuid.uuid4()), "type": "t.v1", "data": {}},
+                    target_url="https://example.com/wh/",
+                    profile="billing",
+                )
+
+            with self.assertRaises(RateLimitExceeded) as ctx:
+                dispatch_webhook_sync(
+                    payload={"id": str(uuid.uuid4()), "type": "t.v1", "data": {}},
+                    target_url="https://example.com/wh/",
+                    profile="billing",
+                )
+
+        exc = ctx.exception
+        self.assertEqual(exc.profile, "billing")
+        self.assertEqual(exc.limit, 3)
+        # Solo se hicieron 3 llamadas HTTP, no 4
+        self.assertEqual(mock_post.call_count, 3)
+
+    def test_profile_headers_are_sent(self):
+        """Los headers del perfil (ej. X-Source) se incluyen en el request."""
+        from webhooks.producer.dispatch import dispatch_webhook_sync
+
+        with patch("webhooks.producer.dispatch.httpx.post") as mock_post:
+            mock_post.return_value = Mock(status_code=200)
+            dispatch_webhook_sync(
+                payload={"id": str(uuid.uuid4()), "type": "t.v1", "data": {}},
+                target_url="https://example.com/wh/",
+                profile="billing",
+            )
+
+        sent_headers = mock_post.call_args.kwargs["headers"]
+        self.assertEqual(sent_headers.get("X-Source"), "billing-service")
+
+    def test_accepts_canonical_event_envelope(self):
+        """dispatch_webhook_sync acepta CanonicalEventEnvelope directamente."""
+        from webhooks.producer.dispatch import dispatch_webhook_sync
+        from webhooks.contrib.pydantic import CanonicalEventEnvelope
+
+        envelope = CanonicalEventEnvelope(
+            type="orders.created.v1",
+            data={"order_id": "ord-999"},
+        )
+
+        with patch("webhooks.producer.dispatch.httpx.post") as mock_post:
+            mock_post.return_value = Mock(status_code=200)
+            response = dispatch_webhook_sync(
+                payload=envelope,
+                target_url="https://example.com/wh/",
+                profile="default",
+            )
+
+        self.assertEqual(response.status_code, 200)
+        sent_body = mock_post.call_args.kwargs["content"]
+        body_dict = json.loads(sent_body)
+        self.assertEqual(body_dict["type"], "orders.created.v1")
+        self.assertEqual(body_dict["data"]["order_id"], "ord-999")
+        self.assertIn("id", body_dict)
+
+
+class CanonicalEventEnvelopeTest(TestCase):
+    """Verifica el helper Pydantic para el envelope canónico de eventos.
+
+    ``CanonicalEventEnvelope`` es el contrato de serialización recomendado
+    para eventos de primera clase.  Requiere ``pydantic>=2.0``.
+    """
+
+    def test_auto_generates_uuid_id(self):
+        """id se genera automáticamente como UUID v4."""
+        import re
+        from webhooks.contrib.pydantic import CanonicalEventEnvelope
+
+        envelope = CanonicalEventEnvelope(type="orders.created.v1", data={})
+        uuid_pattern = re.compile(
+            r"^[0-9a-f]{8}-[0-9a-f]{4}-4[0-9a-f]{3}-[89ab][0-9a-f]{3}-[0-9a-f]{12}$"
+        )
+        self.assertRegex(envelope.id, uuid_pattern)
+
+    def test_two_envelopes_have_different_ids(self):
+        """Cada instancia genera su propio UUID único."""
+        from webhooks.contrib.pydantic import CanonicalEventEnvelope
+
+        a = CanonicalEventEnvelope(type="orders.created.v1", data={})
+        b = CanonicalEventEnvelope(type="orders.created.v1", data={})
+        self.assertNotEqual(a.id, b.id)
+
+    def test_auto_sets_occurred_at_as_utc_datetime(self):
+        """occurred_at se establece automáticamente como datetime UTC."""
+        from datetime import timezone
+        from webhooks.contrib.pydantic import CanonicalEventEnvelope
+
+        envelope = CanonicalEventEnvelope(type="orders.created.v1", data={})
+        self.assertIsNotNone(envelope.occurred_at)
+        self.assertEqual(envelope.occurred_at.tzinfo, timezone.utc)
+
+    def test_model_dump_serializes_all_fields(self):
+        """model_dump() retorna dict con id, type, data, occurred_at, trace_id."""
+        from webhooks.contrib.pydantic import CanonicalEventEnvelope
+
+        envelope = CanonicalEventEnvelope(
+            type="orders.created.v1",
+            data={"order_id": "ord-001"},
+            trace_id="trace-abc",
+        )
+        data = envelope.model_dump()
+        self.assertIn("id", data)
+        self.assertIn("type", data)
+        self.assertIn("data", data)
+        self.assertIn("occurred_at", data)
+        self.assertEqual(data["trace_id"], "trace-abc")
+        self.assertEqual(data["data"]["order_id"], "ord-001")
+
+
+class WebhookSystemChecksTest(TestCase):
+    """Verifica el framework de verificaciones de sistema para WEBHOOK_PROFILES.
+
+    Los checks se ejecutan con ``manage.py check`` y al arrancar Django,
+    detectando configuraciones incorrectas antes de llegar a producción.
+    """
+
+    def _run_checks(self, profiles_value):
+        """Ejecuta los checks con un valor sobreescrito de WEBHOOK_PROFILES."""
+        from django.conf import settings
+        from webhooks.core.checks import check_webhook_profiles
+
+        original = getattr(settings, "WEBHOOK_PROFILES", None)
+        had_attribute = hasattr(settings, "WEBHOOK_PROFILES")
+        settings.WEBHOOK_PROFILES = profiles_value
+        try:
+            return check_webhook_profiles(app_configs=None)
+        finally:
+            if had_attribute:
+                settings.WEBHOOK_PROFILES = original
+            else:
+                try:
+                    del settings.WEBHOOK_PROFILES
+                except AttributeError:
+                    pass
+
+    def test_i001_emitted_when_no_profiles_configured(self):
+        """webhooks.I001 se emite cuando WEBHOOK_PROFILES no está configurado."""
+        from django.core.checks import Info
+
+        messages = self._run_checks(None)
+        ids = [m.id for m in messages]
+        self.assertIn("webhooks.I001", ids)
+        self.assertTrue(all(isinstance(m, Info) for m in messages))
+
+    def test_e001_emitted_when_profiles_not_a_dict(self):
+        """webhooks.E001 se emite cuando WEBHOOK_PROFILES no es un diccionario."""
+        from django.core.checks import Error
+
+        messages = self._run_checks("not-a-dict")
+        ids = [m.id for m in messages]
+        self.assertIn("webhooks.E001", ids)
+        self.assertTrue(any(isinstance(m, Error) for m in messages))
+
+    def test_e002_emitted_when_profile_config_not_a_dict(self):
+        """webhooks.E002 se emite cuando la configuración de un perfil no es dict."""
+        from django.core.checks import Error
+
+        messages = self._run_checks({"my_profile": "invalid"})
+        ids = [m.id for m in messages]
+        self.assertIn("webhooks.E002", ids)
+        self.assertTrue(any(isinstance(m, Error) for m in messages))
+
+    def test_e003_emitted_when_rate_limit_not_a_dict(self):
+        """webhooks.E003 se emite cuando rate_limit no es un diccionario."""
+        messages = self._run_checks({
+            "my_profile": {"timeout": 10, "rate_limit": "100/min"},
+        })
+        ids = [m.id for m in messages]
+        self.assertIn("webhooks.E003", ids)
+
+    def test_w001_emitted_when_timeout_is_not_positive(self):
+        """webhooks.W001 se emite cuando el timeout no es un número positivo."""
+        from django.core.checks import Warning as DjWarning
+
+        messages = self._run_checks({"my_profile": {"timeout": -5}})
+        ids = [m.id for m in messages]
+        self.assertIn("webhooks.W001", ids)
+        self.assertTrue(any(isinstance(m, DjWarning) for m in messages))
+
+    def test_w002_emitted_when_rate_limit_values_invalid(self):
+        """webhooks.W002 se emite cuando limit/window en rate_limit no son enteros positivos."""
+        from django.core.checks import Warning as DjWarning
+
+        messages = self._run_checks({
+            "my_profile": {"rate_limit": {"limit": -10, "window": 60}},
+        })
+        ids = [m.id for m in messages]
+        self.assertIn("webhooks.W002", ids)
+
+    def test_no_messages_when_profiles_are_valid(self):
+        """Sin errores ni warnings cuando WEBHOOK_PROFILES está correctamente configurado."""
+        messages = self._run_checks({
+            "default": {"timeout": 10},
+            "billing": {
+                "timeout": 30,
+                "secret": "whsec_abc",
+                "rate_limit": {"limit": 100, "window": 60},
+            },
+        })
+        self.assertEqual(messages, [])
+
+    def test_multiple_invalid_profiles_generate_one_warning_each(self):
+        """Cada perfil inválido genera su propio mensaje de check."""
+        messages = self._run_checks({
+            "a": {"timeout": -1},
+            "b": {"timeout": -2},
+        })
+        ids = [m.id for m in messages]
+        self.assertEqual(ids.count("webhooks.W001"), 2)
+
+    def test_checks_module_registers_check_function(self):
+        """El módulo de checks expone la función check_webhook_profiles."""
+        from webhooks.core import checks as checks_module
+        self.assertTrue(callable(getattr(checks_module, "check_webhook_profiles", None)))
