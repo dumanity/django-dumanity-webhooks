@@ -8,7 +8,7 @@ from django.contrib import admin, messages
 from django.shortcuts import get_object_or_404, redirect, render
 from django.urls import path, reverse
 from django.utils import timezone
-from django.utils.html import format_html
+from django.utils.html import format_html, mark_safe
 
 from .models import AuditLog, DeadLetter, EventLog, Integration, Secret
 
@@ -242,7 +242,7 @@ class DeadLetterAdmin(admin.ModelAdmin):
     @admin.display(description="Estado replay")
     def replay_status_display(self, obj):
         if obj.replayed_at:
-            return format_html('<span style="color:gray">Ya replayado</span>')
+            return mark_safe('<span style="color:gray">Ya replayado</span>')
         url = reverse(f"admin:{_APP}_deadletter_replay", args=[obj.pk])
         return format_html('<a class="button" href="{}">Replay</a>', url)
 

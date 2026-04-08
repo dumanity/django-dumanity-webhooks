@@ -117,7 +117,68 @@ python manage.py migrate
 - Clave única por integración: `(integration_id, event_id)` permite reutilizar UUIDs entre productores sin colisión
 - EventLog registra todos los eventos procesados o rechazados, incluidos duplicados
 
-## 5. Extension por plugin
+## 5. Funciones de servicio reutilizables
+
+Estas funciones son parte de la API pública del paquete. Están diseñadas para
+ser invocadas desde código de integración, scripts de onboarding, pipelines
+de CI y el Django Admin — sin duplicar lógica entre ellos.
+
+### `bootstrap_receiver(integration_name, shared_secret, expires_days)`
+
+**Módulo:** `webhooks.receiver.services`
+
+Crea o reutiliza una `Integration` con su `APIKey` y un `Secret` HMAC inicial.
+Es la función que usa internamente tanto `webhooks_bootstrap --receiver-only`
+como el formulario de Bootstrap del Admin.
+
+```python
+from webhooks.receiver.services import bootstrap_receiver
+
+result = bootstrap_receiver(
+    integration_name="producer-a",
+    shared_secret="whsec_example_123",  # None = genera automáticamente
+    expires_days=30,
+)
+
+# result["integration"]         → instancia de Integration
+# result["api_key_plaintext"]   → str | None  (None si la integración ya existía)
+# result["secret"]              → str HMAC secret
+# result["integration_reused"]  → bool
+```
+
+**Semántica de idempotencia:**
+
+| Situación | `integration_reused` | `api_key_plaintext` |
+|---|---|---|
+| Nueva integración | `False` | str (mostrar UNA vez, guardar en vault) |
+| Integración ya existente | `True` | `None` (clave ya no recuperable) |
+
+**Errores:**
+
+- `ValueError` si `expires_days < 1`.
+
+**Uso típico en scripts de CI/onboarding:**
+
+```python
+result = bootstrap_receiver("producer-a")
+if result["api_key_plaintext"]:
+    vault.store("RECEIVER_API_KEY", result["api_key_plaintext"])
+vault.store("WEBHOOK_SHARED_SECRET", result["secret"])
+```
+
+**Uso en tests de integración:**
+
+```python
+from webhooks.receiver.services import bootstrap_receiver
+
+result = bootstrap_receiver("test-producer", expires_days=1)
+raw_key = result["api_key_plaintext"]
+secret  = result["secret"]
+```
+
+---
+
+## 6. Extension por plugin
 
 Un plugin debe:
 
@@ -172,7 +233,7 @@ Si trabajas con un repo de negocio, un repo de plugin de contratos y un repo de 
 
 Si cambia el payload, no sobreescribas el mismo evento: crea `v2` y conserva `v1` mientras algún consumidor lo necesite.
 
-## 6. Testing recomendado
+## 7. Testing recomendado
 
 ### Unit tests
 - `test_signing`: firma HMAC determinística con timestamp.
@@ -199,7 +260,7 @@ Si cambia el payload, no sobreescribas el mismo evento: crea `v2` y conserva `v1
 - `test_rate_limit_enforcement`: exceso de requests → 429.
 - `test_missing_api_key`: sin API key o clave inválida → 403.
 
-## 7. Limitaciones y garantías
+## 8. Limitaciones y garantías
 
 ### Limitaciones operativas
 - **Rate limiting**: por bucket temporal en cache Django (no distribuido). Recomendado para <100 req/min por integración en producción simple.
@@ -220,17 +281,24 @@ Si cambia el payload, no sobreescribas el mismo evento: crea `v2` y conserva `v1
 - **Replay trazable**: `webhooks_replay` requiere motivo, soporta `--dry-run` y registra metadatos de replay.
 - **Operación guiada**: `webhooks_list_failures` expone fallos de outbox/DLQ con pasos de resolución.
 
-## 8. Roadmap sugerido
+### Garantías implementadas (v1.2.0)
+- **Admin completo para receiver**: gestión de integraciones, secretos, event logs, dead letters y audit logs desde Django Admin sin necesidad de CLI.
+- **Bootstrap desde Admin**: `bootstrap_receiver()` como API pública reutilizable desde Admin, CLI y código.
+- **Replay desde Admin**: Dead Letters se pueden reintentar con nuevo event ID directamente desde la interfaz web, con bloqueo anti-doble-replay y trazabilidad completa.
+- **Rotación de secretos desde Admin**: botón "Rotar secreto" por integración, con ventana de coexistencia segura.
+- **Redacción automática en Admin**: `SecretAdmin` nunca expone el valor completo del secreto — solo los primeros 8 caracteres más `[REDACTED]`.
+
+## 9. Roadmap sugerido
 
 1. ✓ ~~Resolver integracion desde API key de forma estricta~~ (hecho en v1.0.0).
 2. ✓ ~~Rate limit por integration_id~~ (hecho en v1.0.0).
 3. ✓ ~~Idempotencia scoped por integración~~ (hecho en v1.0.0).
 4. ✓ ~~Configurar max retries y timeout por endpoint~~ (hecho en v1.0.0).
 5. ✓ ~~Exportar metricas a Prometheus/OpenTelemetry~~ (endpoint `/metrics` básico en v1.0.0; OTel avanzado queda en backlog).
-6. Dashboard operativo para DeadLetter y AuditLog (backlog).
+6. ✓ ~~Dashboard operativo para DeadLetter y AuditLog~~ (Admin completo en v1.2.0).
 7. Event versioning y schema evolution helpers (backlog).
 
-## 9. Despliegue Lean (1 operador)
+## 10. Despliegue Lean (1 operador)
 
 Objetivo: operar con el menor costo y complejidad posible.
 
@@ -297,7 +365,7 @@ Buenas prácticas para el plan gratuito:
 - Sampling bajo (`0.01` a `0.05`) para no quemar cuota.
 - No enviar payloads completos con PII.
 
-## 10. Runbook operativo mínimo
+## 11. Runbook operativo mínimo
 
 ### Señales de alarma
 
@@ -318,13 +386,19 @@ Referencia extendida para auditoria operativa:
 
 - `docs/auditing-guide.md` (modelo de auditoria, catalogo de codigos, runbook 10 min, postmortem corto)
 
-### Reproceso controlado (manual)
+### Reproceso controlado (Admin o manual)
 
+**Admin (recomendado para operadores de guardia):**
+1. Admin → **Dead Letters** → fila del evento → botón **"Replay"**.
+2. Selecciona endpoint destino y escribe el motivo.
+3. Marca "Generar nuevo event ID" y confirma.
+
+**Manual (scripting o CI):**
 1. Seleccionar eventos de `DeadLetter` por causa/ventana.
 2. Reconstruir payload original y re-publicar por `publish_event`.
 3. Confirmar en `EventLog` estado `processed`.
 
-## 11. Checklist de seguridad (baseline)
+## 12. Checklist de seguridad (baseline)
 
 - [ ] API Key obligatoria para receiver.
 - [ ] Resolución fail-closed activa.
@@ -335,7 +409,7 @@ Referencia extendida para auditoria operativa:
 - [ ] Sentry sin PII por defecto (`send_default_pii=False`).
 - [ ] Dependencias escaneadas mensualmente (`pip-audit` o herramienta CI).
 
-## 12. Performance y SLO (lean)
+## 13. Performance y SLO (lean)
 
 ### Script de carga incluido
 

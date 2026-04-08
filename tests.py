@@ -1677,6 +1677,194 @@ class ReceiverAdminReadonlyModelsTest(TestCase):
         self.assertFalse(self.auditlog_admin.has_delete_permission(self._req()))
 
 
+# ---------------------------------------------------------------------------
+# E2E Admin tests — TestClient (superuser navegando el Admin real)
+# ---------------------------------------------------------------------------
+
+class AdminE2EBootstrapTest(TestCase):
+    """
+    Tests E2E que usan Django TestClient con superuser autenticado para navegar
+    el ciclo completo Admin → DB en el flujo de bootstrap de integraciones.
+    """
+
+    def setUp(self):
+        from django.contrib.auth.models import User
+        self.superuser = User.objects.create_superuser(
+            username="e2e_admin", email="e2e@test.com", password="example-test-pass-1"
+        )
+        self.client.force_login(self.superuser)
+
+    def test_bootstrap_get_renders_form(self):
+        """GET al formulario de bootstrap devuelve 200 con el formulario."""
+        url = reverse("admin:dumanity_webhooks_receiver_integration_bootstrap")
+        response = self.client.get(url)
+        self.assertEqual(response.status_code, 200)
+        self.assertContains(response, "integration_name")
+        self.assertContains(response, "Bootstrap")
+
+    def test_bootstrap_post_creates_integration_and_secret_in_db(self):
+        """POST del formulario de bootstrap crea Integration y Secret en la BD."""
+        url = reverse("admin:dumanity_webhooks_receiver_integration_bootstrap")
+        response = self.client.post(url, {
+            "integration_name": "e2e-bootstrap-test",
+            "shared_secret": "whsec_e2e_bs",
+            "expires_days": "7",
+        }, follow=True)
+
+        self.assertEqual(response.status_code, 200)
+        self.assertTrue(Integration.objects.filter(name="e2e-bootstrap-test").exists())
+        self.assertTrue(
+            Secret.objects.filter(
+                integration__name="e2e-bootstrap-test",
+                secret="whsec_e2e_bs",
+                is_active=True,
+            ).exists()
+        )
+
+    def test_bootstrap_post_empty_name_does_not_create(self):
+        """POST con nombre vacío no crea integración y redirige al formulario."""
+        url = reverse("admin:dumanity_webhooks_receiver_integration_bootstrap")
+        count_before = Integration.objects.count()
+        response = self.client.post(url, {"integration_name": "", "expires_days": "7"}, follow=True)
+        self.assertEqual(response.status_code, 200)
+        self.assertEqual(Integration.objects.count(), count_before)
+
+    def test_integration_changelist_shows_bootstrap_button(self):
+        """El changelist de integraciones renderiza el botón Bootstrap."""
+        url = reverse("admin:dumanity_webhooks_receiver_integration_changelist")
+        response = self.client.get(url)
+        self.assertEqual(response.status_code, 200)
+        self.assertContains(response, "Bootstrap")
+
+
+class AdminE2ERotateSecretTest(TestCase):
+    """E2E: rotación de secreto desde Admin crea nuevo Secret en BD."""
+
+    def setUp(self):
+        from django.contrib.auth.models import User
+        self.superuser = User.objects.create_superuser(
+            username="e2e_rotate", email="rotate@test.com", password="example-test-pass-2"
+        )
+        self.client.force_login(self.superuser)
+        api_key_obj, _ = APIKey.objects.create_key(name="e2e-rotate-integration")
+        self.integration = Integration.objects.create(
+            name="e2e-rotate-integration",
+            api_key=api_key_obj,
+        )
+
+    def test_rotate_secret_creates_new_secret_in_db(self):
+        """GET a rotate-secret crea un nuevo Secret activo y redirige al changelist."""
+        url = reverse(
+            "admin:dumanity_webhooks_receiver_integration_rotate_secret",
+            args=[self.integration.pk],
+        )
+        response = self.client.get(url, follow=True)
+
+        self.assertEqual(response.status_code, 200)
+        new_secret = Secret.objects.filter(
+            integration=self.integration,
+            is_active=True,
+        ).first()
+        self.assertIsNotNone(new_secret)
+        self.assertTrue(new_secret.secret.startswith("whsec_"))
+        self.assertIsNotNone(new_secret.expires_at)
+
+    def test_rotate_secret_redirects_to_changelist(self):
+        """La rotación de secreto redirige al changelist de integraciones."""
+        url = reverse(
+            "admin:dumanity_webhooks_receiver_integration_rotate_secret",
+            args=[self.integration.pk],
+        )
+        response = self.client.get(url)
+        self.assertEqual(response.status_code, 302)
+        self.assertIn(
+            reverse("admin:dumanity_webhooks_receiver_integration_changelist"),
+            response["Location"],
+        )
+
+
+class AdminE2EReplayTest(TestCase):
+    """E2E: replay de Dead Letter desde Admin encola OutgoingEvent en BD."""
+
+    def setUp(self):
+        from django.contrib.auth.models import User
+        self.superuser = User.objects.create_superuser(
+            username="e2e_replay", email="replay@test.com", password="example-test-pass-3"
+        )
+        self.client.force_login(self.superuser)
+        self.endpoint = WebhookEndpoint.objects.create(
+            name="e2e-replay-endpoint",
+            url="https://example.com/webhooks/",
+            secret="whsec_e2e",
+            is_active=True,
+        )
+        self.payload = {
+            "id": str(uuid.uuid4()),
+            "type": "orders.created.v1",
+            "data": {"order_id": "e2e-o-1"},
+        }
+        self.dead_letter = DeadLetter.objects.create(
+            payload=self.payload,
+            reason="e2e test failure",
+            retries=1,
+        )
+
+    def test_replay_get_renders_form(self):
+        """GET al formulario de replay devuelve 200 con el formulario."""
+        url = reverse(
+            "admin:dumanity_webhooks_receiver_deadletter_replay",
+            args=[self.dead_letter.pk],
+        )
+        response = self.client.get(url)
+        self.assertEqual(response.status_code, 200)
+        self.assertContains(response, "endpoint_id")
+        self.assertContains(response, "reason")
+        self.assertContains(response, "new_event_id")
+
+    def test_replay_post_enqueues_outgoing_event_and_marks_dead_letter(self):
+        """POST del formulario de replay crea OutgoingEvent y marca el DeadLetter."""
+        url = reverse(
+            "admin:dumanity_webhooks_receiver_deadletter_replay",
+            args=[self.dead_letter.pk],
+        )
+        response = self.client.post(url, {
+            "endpoint_id": str(self.endpoint.id),
+            "reason": "e2e handler fixed",
+            "new_event_id": "1",
+        }, follow=True)
+
+        self.assertEqual(response.status_code, 200)
+
+        self.dead_letter.refresh_from_db()
+        self.assertIsNotNone(self.dead_letter.replayed_at)
+        self.assertEqual(self.dead_letter.replay_reason, "e2e handler fixed")
+        self.assertIsNotNone(self.dead_letter.replay_event_id)
+
+        event = OutgoingEvent.objects.filter(endpoint=self.endpoint).first()
+        self.assertIsNotNone(event)
+        self.assertEqual(event.status, "pending")
+
+    def test_replay_post_blocks_already_replayed_dead_letter(self):
+        """POST de replay sobre un DeadLetter ya replayado no encola y redirige."""
+        from django.utils.timezone import now
+        self.dead_letter.replayed_at = now()
+        self.dead_letter.replay_reason = "previous"
+        self.dead_letter.save()
+
+        url = reverse(
+            "admin:dumanity_webhooks_receiver_deadletter_replay",
+            args=[self.dead_letter.pk],
+        )
+        response = self.client.post(url, {
+            "endpoint_id": str(self.endpoint.id),
+            "reason": "second attempt",
+            "new_event_id": "1",
+        }, follow=True)
+
+        self.assertEqual(response.status_code, 200)
+        self.assertEqual(OutgoingEvent.objects.filter(endpoint=self.endpoint).count(), 0)
+
+
 if __name__ == "__main__":
     import unittest
     unittest.main()
