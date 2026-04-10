@@ -2,6 +2,37 @@
 
 All notable changes to this project will be documented in this file.
 
+## [2.1.0] – 2026-04-10
+
+### Added
+
+- **`X-Trace-Id` en receiver** – `_extract_trace_context()` ahora lee el header
+  `X-Trace-Id` del webhook entrante y lo propaga a `EventLog`, `AuditLog` y
+  `DeadLetter` como campo `trace_id`.  Permite correlación E2E completa entre
+  el sistema emisor (que inyecta el trace via OTel) y el registro de auditoría
+  del receptor.
+
+- **`trace_id` en señal `webhook_received`** – La señal `webhook_received` ahora
+  incluye el kwarg `trace_id` (str | None), disponible para que las host apps
+  logueen el trace sin acceder a los internos del paquete.
+
+- **Campos `trace_id` en modelos** – `trace_id` ya forma parte del schema base de
+  receiver en `EventLog`, `AuditLog` y `DeadLetter` (migraciones recreadas
+  desde cero para `v2.1.0`).
+
+### Migration guide `2.0.0 → 2.1.0`
+
+1. Actualiza la dependencia a `@v2.1.0`.
+2. Ejecuta migraciones: `python manage.py migrate`.
+3. Opcional: conecta el nuevo kwarg `trace_id` en tu receiver de
+   `webhook_received` para enriquecer tus logs de dominio.
+
+```python
+@receiver(webhook_received)
+def on_received(sender, *, event_id, event_type, integration_name, trace_id, **kwargs):
+    logger.info("webhook received", extra={"trace_id": trace_id, "event_type": event_type})
+```
+
 ## [1.2.0] – 2026-04-08
 
 ### Added

@@ -8,7 +8,8 @@ Señales disponibles
 --------------------
 ``webhook_received``
     Webhook entrante procesado con éxito.
-    kwargs: ``event_id`` (str), ``event_type`` (str), ``integration_name`` (str)
+    kwargs: ``event_id`` (str), ``event_type`` (str), ``integration_name`` (str),
+            ``trace_id`` (str|None)
 
 ``webhook_dispatched``
     Webhook saliente entregado con código 2xx.
@@ -34,6 +35,11 @@ Uso típico::
     def on_dispatched(sender, *, target_url, event_id, event_type,
                       profile, status_code, latency_ms, **kwargs):
         logger.info("Webhook despachado", extra={"status": status_code})
+
+    @receiver(webhook_received)
+    def on_received(sender, *, event_id, event_type, integration_name,
+                    trace_id, **kwargs):
+        logger.info("Webhook recibido", extra={"trace_id": trace_id})
 """
 
 from django.dispatch import Signal

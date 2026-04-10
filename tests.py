@@ -1865,6 +1865,263 @@ class AdminE2EReplayTest(TestCase):
         self.assertEqual(OutgoingEvent.objects.filter(endpoint=self.endpoint).count(), 0)
 
 
+
+
+# ---------------------------------------------------------------------------
+# v2.1.0 — Trazabilidad E2E (X-Trace-Id inbound), señales lifecycle, pydantic
+# ---------------------------------------------------------------------------
+
+class TraceIdInboundPropagationTest(TestCase):
+    """Valida que X-Trace-Id inbound se propaga a EventLog, AuditLog y DeadLetter."""
+
+    def setUp(self):
+        _registry.clear()
+        _HANDLER_REGISTRY.clear()
+
+        self.factory = APIRequestFactory()
+
+        api_key, self.raw_key = APIKey.objects.create_key(name="trace-test-app")
+        self.integration = Integration.objects.create(name="trace-test-app", api_key=api_key)
+        Secret.objects.create(integration=self.integration, secret="trace-secret")
+
+        register_event(
+            {
+                "type": "trace.event.v1",
+                "payload_schema": {
+                    "type": "object",
+                    "properties": {"id": {"type": "string"}},
+                    "required": ["id"],
+                },
+            }
+        )
+
+        @register_handler("trace.event.v1")
+        def _handler(data):
+            pass
+
+    def _post(self, payload, trace_id=None):
+        body = json.dumps(payload).encode()
+        sig = sign(secret="trace-secret", timestamp=int(time.time()), body=body)
+        extra = {}
+        if trace_id:
+            extra["HTTP_X_TRACE_ID"] = trace_id
+        return self.factory.post(
+            "/webhooks/",
+            data=body,
+            content_type="application/json",
+            HTTP_WEBHOOK_SIGNATURE=sig,
+            HTTP_X_EVENT_ID=payload["id"],
+            HTTP_AUTHORIZATION=f"Api-Key {self.raw_key}",
+            **extra,
+        )
+
+    def test_trace_id_stored_in_event_log(self):
+        """X-Trace-Id del header se persiste en EventLog.trace_id."""
+        payload = {"id": str(uuid.uuid4()), "type": "trace.event.v1", "data": {"id": "t1"}}
+        request = self._post(payload, trace_id="trace-abc-123")
+        result = WebhookService.process(request, integration=self.integration)
+        self.assertEqual(result, "ok")
+
+        log = EventLog.objects.get(integration=self.integration, event_id=uuid.UUID(payload["id"]))
+        self.assertEqual(log.trace_id, "trace-abc-123")
+
+    def test_trace_id_stored_in_audit_log(self):
+        """X-Trace-Id del header se persiste en AuditLog.trace_id."""
+        from webhooks.receiver.models import AuditLog
+
+        payload = {"id": str(uuid.uuid4()), "type": "trace.event.v1", "data": {"id": "t2"}}
+        request = self._post(payload, trace_id="trace-def-456")
+        WebhookService.process(request, integration=self.integration)
+
+        audit = AuditLog.objects.filter(integration="trace-test-app").latest("created_at")
+        self.assertEqual(audit.trace_id, "trace-def-456")
+
+    def test_missing_trace_id_stores_none(self):
+        """Sin X-Trace-Id, EventLog.trace_id es None."""
+        payload = {"id": str(uuid.uuid4()), "type": "trace.event.v1", "data": {"id": "t3"}}
+        request = self._post(payload)
+        WebhookService.process(request, integration=self.integration)
+
+        log = EventLog.objects.get(integration=self.integration, event_id=uuid.UUID(payload["id"]))
+        self.assertIsNone(log.trace_id)
+
+    def test_trace_id_in_dead_letter_on_handler_failure(self):
+        """X-Trace-Id se propaga a DeadLetter cuando el handler lanza excepción."""
+        _registry.clear()
+        _HANDLER_REGISTRY.clear()
+
+        register_event(
+            {
+                "type": "trace.fail.v1",
+                "payload_schema": {
+                    "type": "object",
+                    "properties": {"id": {"type": "string"}},
+                    "required": ["id"],
+                },
+            }
+        )
+
+        @register_handler("trace.fail.v1")
+        def _boom(data):
+            raise RuntimeError("handler exploded")
+
+        payload = {"id": str(uuid.uuid4()), "type": "trace.fail.v1", "data": {"id": "t4"}}
+        request = self._post(payload, trace_id="trace-fail-789")
+        WebhookService.process(request, integration=self.integration)
+
+        dl = DeadLetter.objects.filter(payload__id=payload["id"]).first()
+        self.assertIsNotNone(dl)
+        self.assertEqual(dl.trace_id, "trace-fail-789")
+
+
+class WebhookReceivedSignalTraceIdTest(TestCase):
+    """Valida que la señal webhook_received incluye trace_id en kwargs."""
+
+    def setUp(self):
+        _registry.clear()
+        _HANDLER_REGISTRY.clear()
+
+        self.factory = APIRequestFactory()
+        api_key, self.raw_key = APIKey.objects.create_key(name="signal-trace-app")
+        self.integration = Integration.objects.create(name="signal-trace-app", api_key=api_key)
+        Secret.objects.create(integration=self.integration, secret="signal-secret")
+
+        register_event(
+            {
+                "type": "signal.event.v1",
+                "payload_schema": {
+                    "type": "object",
+                    "properties": {"id": {"type": "string"}},
+                    "required": ["id"],
+                },
+            }
+        )
+
+        @register_handler("signal.event.v1")
+        def _handler(data):
+            pass
+
+    def test_webhook_received_signal_includes_trace_id(self):
+        """webhook_received emite trace_id cuando el header X-Trace-Id está presente."""
+        from webhooks.signals import webhook_received
+
+        received_kwargs = {}
+
+        def capture_signal(sender, **kwargs):
+            received_kwargs.update(kwargs)
+
+        webhook_received.connect(capture_signal)
+        try:
+            payload = {"id": str(uuid.uuid4()), "type": "signal.event.v1", "data": {"id": "s1"}}
+            body = json.dumps(payload).encode()
+            sig = sign(secret="signal-secret", timestamp=int(time.time()), body=body)
+            request = self.factory.post(
+                "/webhooks/",
+                data=body,
+                content_type="application/json",
+                HTTP_WEBHOOK_SIGNATURE=sig,
+                HTTP_X_EVENT_ID=payload["id"],
+                HTTP_AUTHORIZATION=f"Api-Key {self.raw_key}",
+                HTTP_X_TRACE_ID="trace-signal-001",
+            )
+            WebhookService.process(request, integration=self.integration)
+        finally:
+            webhook_received.disconnect(capture_signal)
+
+        self.assertIn("trace_id", received_kwargs)
+        self.assertEqual(received_kwargs["trace_id"], "trace-signal-001")
+        self.assertEqual(received_kwargs["event_type"], "signal.event.v1")
+        self.assertEqual(received_kwargs["integration_name"], "signal-trace-app")
+
+    def test_webhook_received_signal_trace_id_none_when_absent(self):
+        """webhook_received emite trace_id=None cuando el header no está presente."""
+        from webhooks.signals import webhook_received
+
+        received_kwargs = {}
+
+        def capture_signal(sender, **kwargs):
+            received_kwargs.update(kwargs)
+
+        webhook_received.connect(capture_signal)
+        try:
+            payload = {"id": str(uuid.uuid4()), "type": "signal.event.v1", "data": {"id": "s2"}}
+            body = json.dumps(payload).encode()
+            sig = sign(secret="signal-secret", timestamp=int(time.time()), body=body)
+            request = self.factory.post(
+                "/webhooks/",
+                data=body,
+                content_type="application/json",
+                HTTP_WEBHOOK_SIGNATURE=sig,
+                HTTP_X_EVENT_ID=payload["id"],
+                HTTP_AUTHORIZATION=f"Api-Key {self.raw_key}",
+            )
+            WebhookService.process(request, integration=self.integration)
+        finally:
+            webhook_received.disconnect(capture_signal)
+
+        self.assertIn("trace_id", received_kwargs)
+        self.assertIsNone(received_kwargs["trace_id"])
+
+
+class PydanticOptionalTest(TestCase):
+    """Valida el soporte opcional de Pydantic en dispatch_webhook_sync."""
+
+    def test_canonical_envelope_serialized_correctly(self):
+        """CanonicalEventEnvelope se serializa con model_dump(mode='json')."""
+        from webhooks.contrib.pydantic import CanonicalEventEnvelope
+        from webhooks.producer.dispatch import _serialize_payload
+
+        envelope = CanonicalEventEnvelope(
+            type="orders.created.v1",
+            data={"order_id": "ord-pyd-1"},
+        )
+        data = _serialize_payload(envelope)
+
+        self.assertEqual(data["type"], "orders.created.v1")
+        self.assertEqual(data["data"]["order_id"], "ord-pyd-1")
+        self.assertIn("id", data)
+        self.assertIn("occurred_at", data)
+
+    def test_pydantic_envelope_with_trace_id_field(self):
+        """CanonicalEventEnvelope persiste trace_id en el campo del modelo."""
+        from webhooks.contrib.pydantic import CanonicalEventEnvelope
+
+        envelope = CanonicalEventEnvelope(
+            type="orders.created.v1",
+            data={"order_id": "ord-pyd-2"},
+            trace_id="trace-pyd-abc",
+        )
+        self.assertEqual(envelope.trace_id, "trace-pyd-abc")
+
+    @patch("webhooks.producer.dispatch.httpx.post")
+    def test_dispatch_webhook_sync_accepts_pydantic_model(self, mock_post):
+        """dispatch_webhook_sync acepta CanonicalEventEnvelope directamente."""
+        from webhooks.contrib.pydantic import CanonicalEventEnvelope
+        from webhooks.producer.dispatch import dispatch_webhook_sync
+
+        mock_post.return_value = Mock(status_code=200)
+
+        envelope = CanonicalEventEnvelope(
+            type="orders.created.v1",
+            data={"order_id": "ord-pyd-3"},
+        )
+        response = dispatch_webhook_sync(envelope, "https://example.com/webhooks/")
+
+        self.assertEqual(response.status_code, 200)
+        mock_post.assert_called_once()
+        sent_body = json.loads(mock_post.call_args.kwargs["content"])
+        self.assertEqual(sent_body["type"], "orders.created.v1")
+        self.assertEqual(sent_body["data"]["order_id"], "ord-pyd-3")
+
+    def test_dict_payload_also_works_without_pydantic(self):
+        """_serialize_payload acepta dict normal (sin pydantic instalado)."""
+        from webhooks.producer.dispatch import _serialize_payload
+
+        data = {"id": "uuid-1", "type": "test.v1", "data": {"k": "v"}}
+        result = _serialize_payload(data)
+        self.assertEqual(result, data)
+
+
 if __name__ == "__main__":
     import unittest
     unittest.main()
