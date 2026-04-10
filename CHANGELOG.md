@@ -16,18 +16,15 @@ All notable changes to this project will be documented in this file.
   incluye el kwarg `trace_id` (str | None), disponible para que las host apps
   logueen el trace sin acceder a los internos del paquete.
 
-- **Campos `trace_id` en modelos** – Nuevas columnas opcionales `trace_id`
-  (`CharField(max_length=128, null=True)`) en `EventLog`, `AuditLog` y
-  `DeadLetter`.  Requiere ejecutar `python manage.py migrate` después de
-  actualizar.
+- **Campos `trace_id` en modelos** – `trace_id` ya forma parte del schema base de
+  receiver en `EventLog`, `AuditLog` y `DeadLetter` (migraciones recreadas
+  desde cero para `v2.1.0`).
 
 ### Migration guide `2.0.0 → 2.1.0`
 
 1. Actualiza la dependencia a `@v2.1.0`.
 2. Ejecuta migraciones: `python manage.py migrate`.
-3. No hay cambios breaking: nuevos campos son `null=True`, el comportamiento
-   existente es idéntico si no se envía `X-Trace-Id`.
-4. Opcional: conecta el nuevo kwarg `trace_id` en tu receiver de
+3. Opcional: conecta el nuevo kwarg `trace_id` en tu receiver de
    `webhook_received` para enriquecer tus logs de dominio.
 
 ```python
