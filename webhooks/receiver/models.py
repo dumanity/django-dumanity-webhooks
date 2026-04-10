@@ -75,6 +75,7 @@ class EventLog(models.Model):
         event_id: UUID del evento (reutilizable entre integraciones)
         correlation_id: Id transversal de la transaccion (opcional)
         request_id: Id del intento de comando relacionado (opcional)
+        trace_id: Trace ID distribuido leído de X-Trace-Id (opcional)
         type: Tipo de evento (ej: "user.created.v1")
         payload: JSON completo del evento
         status: "received", "processed", "failed"
@@ -95,6 +96,7 @@ class EventLog(models.Model):
     event_id = models.UUIDField()
     correlation_id = models.CharField(max_length=100, null=True, blank=True)
     request_id = models.CharField(max_length=100, null=True, blank=True)
+    trace_id = models.CharField(max_length=128, null=True, blank=True)
     type = models.CharField(max_length=100)
     payload = models.JSONField()
     status = models.CharField(max_length=20)
@@ -115,6 +117,7 @@ class DeadLetter(models.Model):
         retries: Contador de intentos fallidos
         correlation_id: Id transversal de la transaccion (opcional)
         request_id: Id del intento relacionado (opcional)
+        trace_id: Trace ID distribuido leído de X-Trace-Id (opcional)
     
     Operación:
         - Revisar regularmente para debug
@@ -126,6 +129,7 @@ class DeadLetter(models.Model):
     retries = models.IntegerField(default=0)
     correlation_id = models.CharField(max_length=100, null=True, blank=True)
     request_id = models.CharField(max_length=100, null=True, blank=True)
+    trace_id = models.CharField(max_length=128, null=True, blank=True)
     replayed_at = models.DateTimeField(null=True, blank=True)
     replay_reason = models.TextField(null=True, blank=True)
     replay_event_id = models.UUIDField(null=True, blank=True)
@@ -143,6 +147,7 @@ class AuditLog(models.Model):
         integration: Nombre de la integración (desnormalizado para rapidez)
         correlation_id: Id transversal de la transaccion (opcional)
         request_id: Id del intento relacionado (opcional)
+        trace_id: Trace ID distribuido leído de X-Trace-Id (opcional)
         request_headers: JSON con headers enviados (sin Authorization)
         created_at: Timestamp de recepción
     
@@ -155,5 +160,6 @@ class AuditLog(models.Model):
     integration = models.CharField(max_length=100)
     correlation_id = models.CharField(max_length=100, null=True, blank=True)
     request_id = models.CharField(max_length=100, null=True, blank=True)
+    trace_id = models.CharField(max_length=128, null=True, blank=True)
     request_headers = models.JSONField()
     created_at = models.DateTimeField(auto_now_add=True)

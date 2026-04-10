@@ -1,4 +1,4 @@
-# django-dumanity-webhooks · v2.0.0
+# django-dumanity-webhooks · v2.1.0
 
 Framework Django para webhooks seguros, desacoplados y listos para producción.
 
@@ -8,6 +8,13 @@ Framework Django para webhooks seguros, desacoplados y listos para producción.
 > `example-test-secret-key`).  Nunca uses credenciales reales en docs, tests
 > ni capturas de pantalla.  Si un secreto real fue expuesto accidentalmente,
 > **rótalo de inmediato**.
+
+## Novedades en v2.1.0
+
+| Característica | Descripción |
+|---|---|
+| **`X-Trace-Id` inbound** | El receiver lee `X-Trace-Id` y lo persiste en `EventLog`, `AuditLog` y `DeadLetter`. La señal `webhook_received` incluye `trace_id` en sus kwargs. |
+| **Trazabilidad E2E** | Correlación completa outbound → inbound: `X-Trace-Id` se inyecta al enviar (OTel) y se captura al recibir, propagándose a todos los registros de auditoría. |
 
 ## Novedades en v2.0.0
 
@@ -53,13 +60,13 @@ Resolver de forma reusable el envío y recepción de webhooks entre aplicaciones
 Desde proyectos con `uv`, recomendado fijar por tag de Git:
 
 ```bash
-uv add "django-dumanity-webhooks @ git+https://github.com/dumanity/django-dumanity-webhooks.git@v2.0.0"
+uv add "django-dumanity-webhooks @ git+https://github.com/dumanity/django-dumanity-webhooks.git@v2.1.0"
 ```
 
 Instalación equivalente con `pip`:
 
 ```bash
-pip install "django-dumanity-webhooks @ git+https://github.com/dumanity/django-dumanity-webhooks.git@v2.0.0"
+pip install "django-dumanity-webhooks @ git+https://github.com/dumanity/django-dumanity-webhooks.git@v2.1.0"
 ```
 
 También puedes declararlo manualmente en `pyproject.toml` del consumidor:
@@ -67,7 +74,7 @@ También puedes declararlo manualmente en `pyproject.toml` del consumidor:
 ```toml
 [project]
 dependencies = [
-  "django-dumanity-webhooks @ git+https://github.com/dumanity/django-dumanity-webhooks.git@v1.1.0",
+  "django-dumanity-webhooks @ git+https://github.com/dumanity/django-dumanity-webhooks.git@v2.1.0",
 ]
 ```
 
@@ -75,12 +82,12 @@ Notas sobre repositorio privado:
 
 - En local, usa `gh auth login`, token o SSH key con acceso al repo.
 - En CI, configura credenciales de GitHub (PAT/deploy key) para poder resolver la dependencia.
-- Mantén siempre la dependencia fijada por tag (`@v1.1.0`) para builds reproducibles.
+- Mantén siempre la dependencia fijada por tag (`@v2.1.0`) para builds reproducibles.
 
 Si el paquete vive en un subdirectorio de un monorepo, usa `#subdirectory=`:
 
 ```bash
-uv add "django-dumanity-webhooks @ git+https://github.com/dumanity/django-dumanity-webhooks.git@v1.1.0#subdirectory=django-dumanity-webhooks"
+uv add "django-dumanity-webhooks @ git+https://github.com/dumanity/django-dumanity-webhooks.git@v2.1.0#subdirectory=django-dumanity-webhooks"
 ```
 
 ## Configuracion minima

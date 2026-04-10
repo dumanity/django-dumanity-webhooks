@@ -18,9 +18,16 @@ from .models import AuditLog, DeadLetter, EventLog, Integration, Secret
 
 
 def _extract_trace_context(headers, payload=None):
-    """Obtiene correlation_id/request_id desde headers o meta del payload."""
+    """Obtiene correlation_id/request_id/trace_id desde headers o meta del payload.
+
+    Prioridades:
+    - ``trace_id``:      ``X-Trace-Id`` (header estándar del paquete).
+    - ``correlation_id``: ``X-Correlation-ID`` > ``payload.meta.correlation_id``.
+    - ``request_id``:    ``X-Request-ID`` > ``payload.meta.request_id``.
+    """
     meta = (payload or {}).get("meta") or {}
     return {
+        "trace_id": headers.get("X-Trace-Id"),
         "correlation_id": headers.get("X-Correlation-ID") or meta.get("correlation_id"),
         "request_id": headers.get("X-Request-ID") or meta.get("request_id"),
     }
@@ -119,6 +126,7 @@ class WebhookService:
             integration=integration.name if integration else "unknown",
             correlation_id=trace_context["correlation_id"],
             request_id=trace_context["request_id"],
+            trace_id=trace_context["trace_id"],
             request_headers=redact_headers(dict(headers)),
         )
 
@@ -145,6 +153,7 @@ class WebhookService:
                 event_id=event_id,
                 correlation_id=trace_context["correlation_id"],
                 request_id=trace_context["request_id"],
+                trace_id=trace_context["trace_id"],
                 type=payload["type"],
                 payload=payload,
                 status="processed",
@@ -171,6 +180,7 @@ class WebhookService:
             event_id=event_id,
             correlation_id=trace_context["correlation_id"],
             request_id=trace_context["request_id"],
+            trace_id=trace_context["trace_id"],
             type=payload["type"],
             payload=payload,
             status="received"
@@ -199,6 +209,7 @@ class WebhookService:
                 retries=1,
                 correlation_id=trace_context["correlation_id"],
                 request_id=trace_context["request_id"],
+                trace_id=trace_context["trace_id"],
             )
 
         log.save()
@@ -209,6 +220,7 @@ class WebhookService:
                 event_id=str(event_id),
                 event_type=payload.get("type"),
                 integration_name=integration.name,
+                trace_id=trace_context["trace_id"],
             )
 
         return "ok"
