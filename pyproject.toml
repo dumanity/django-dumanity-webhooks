@@ -34,7 +34,7 @@ classifiers = [
 
 [project.optional-dependencies]
 # pip install django-dumanity-webhooks[pydantic]
-pydantic = ["pydantic>=2.0"]
+pydantic = ["pydantic>=2.13.0"]
 # pip install django-dumanity-webhooks[otel]
 otel = ["opentelemetry-api>=1.20.0"]
 
