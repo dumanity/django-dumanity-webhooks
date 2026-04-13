@@ -52,6 +52,6 @@ package = true
 
 [dependency-groups]
 dev = [
-    "pytest>=9.0.2",
+    "pytest>=9.0.3",
     "pytest-django>=4.12.0",
 ]
